@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A240 EFIS preview</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1b2026; display: grid; place-items: center; }
+  canvas { width: min(96vw, 128vh); aspect-ratio: 4 / 3; border: 10px solid #000; border-radius: 10px; }
+</style>
+</head>
+<body>
+<!-- Runs the real in-sim display script with demo data (no simulator needed). -->
+<canvas id="efis" width="1024" height="768"></canvas>
+<script src="../sdk-project/PackageSources/html_ui/Pages/VCockpit/Instruments/LocalA240/EFIS/EFIS.js"></script>
+</body>
+</html>

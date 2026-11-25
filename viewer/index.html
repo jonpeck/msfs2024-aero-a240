@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A240 model viewer</title>
+<style>
+  :root { color-scheme: light; }
+  html, body { margin: 0; height: 100%; background: #dfe6ee; font: 13px/1.4 system-ui, sans-serif; color: #1c2430; }
+  canvas { display: block; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 230px; padding: 12px 14px; border-radius: 10px;
+           background: rgba(255,255,255,.88); box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+  #panel h1 { font-size: 14px; margin: 0 0 2px; }
+  #panel p { margin: 0 0 10px; color: #5a6675; font-size: 12px; }
+  label { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; margin: 5px 0; }
+  input[type=range] { width: 100%; }
+  .row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  button { font: inherit; padding: 4px 9px; border: 1px solid #b9c3cf; border-radius: 6px; background: #fff; cursor: pointer; }
+  button:hover { background: #f0f4f8; }
+  #status { margin-top: 8px; color: #5a6675; font-size: 12px; }
+</style>
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="panel">
+  <h1>Aero A240</h1>
+  <p>Drag to orbit, scroll to zoom, right-drag to pan.</p>
+  <label>Elevator <input id="elevator" type="range" min="0" max="100" value="50"></label>
+  <label>Rudder <input id="rudder" type="range" min="0" max="100" value="50"></label>
+  <label>Ailerons <input id="aileron" type="range" min="0" max="100" value="50"></label>
+  <label>Flaps <input id="flaps" type="range" min="0" max="100" value="0"></label>
+  <label>Propeller <input id="prop" type="range" min="0" max="100" value="0"></label>
+  <div class="row">
+    <button id="spin">Spin prop</button>
+    <button id="blur">Prop disc</button>
+    <button id="reset">Outside</button>
+    <button id="cockpit">Cockpit</button>
+    <button id="panelview">Panel</button>
+  </div>
+  <div id="status">Loading model…</div>
+</div>
+<!-- The real in-sim display script, running on demo data, drawn onto the cockpit screen. -->
+<canvas id="efis" width="1024" height="768" style="display:none"></canvas>
+<script src="../sdk-project/PackageSources/html_ui/Pages/VCockpit/Instruments/LocalA240/EFIS/EFIS.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// The SDK source models: the airframe, and the cabin that the sim draws together with it.
+const DIR = '../sdk-project/PackageSources/SimObjects/Airplanes/Local_A240/common/model/';
+const MODELS = ['A240.gltf', 'A240_interior.gltf'];
+const SCREEN_MATERIAL = 'EFIS_Display';
+const FPS = 30;
+// slider id -> animation names in A240.gltf (the SDK's standard names)
+const SLIDERS = {
+  elevator: ['elevator_percent_key'],
+  rudder: ['rudder_percent_key'],
+  aileron: ['l_aileron_percent_key', 'r_aileron_percent_key'],
+  flaps: ['l_flap_percent_key', 'r_flap_percent_key'],
+};
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xdfe6ee);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f96, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(-4, 7, 6);
+scene.add(sun);
+
+const ground = new THREE.Mesh(new THREE.CircleGeometry(14, 64),
+  new THREE.MeshStandardMaterial({ color: 0xc9d1da, roughness: 1 }));
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -1.12;           // wheels touch the ground here
+scene.add(ground);
+
+const camera = new THREE.PerspectiveCamera(35, 1, 0.03, 200);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+function resetView() {
+  // pull back further on narrow windows so the whole 9 m span stays in frame
+  const k = Math.max(1, 1.5 / (innerWidth / innerHeight));
+  camera.fov = 35; camera.updateProjectionMatrix();
+  camera.position.set(-9.5 * k, 4.2 * k, 11 * k);
+  controls.target.set(0, -0.2, -0.6);
+  controls.update();
+}
+// Pilot eye point from cameras.cfg (-0.49, -0.92, 1.12 ft = left seat). glTF +X is the left wing.
+const EYE = new THREE.Vector3(0.28, 0.34, -0.15);
+function cockpitView(pitchDeg = -4, fov = 70, forward = 0) {
+  camera.fov = fov; camera.updateProjectionMatrix();
+  camera.position.copy(EYE).add(new THREE.Vector3(0, 0, forward));
+  const p = pitchDeg * Math.PI / 180;
+  // orbit about a point just ahead of the eye, so dragging looks around from the seat
+  controls.target.copy(camera.position).add(new THREE.Vector3(0, Math.sin(p) * 0.05, Math.cos(p) * 0.05));
+  controls.update();
+}
+resetView();
+
+const status = document.getElementById('status');
+const aircraft = new THREE.Group();
+scene.add(aircraft);
+let mixer, actions = {}, blurNode, bladesNode, spinning = false, screenTexture = null;
+
+const loader = new GLTFLoader();
+Promise.all(MODELS.map(f => loader.loadAsync(DIR + f))).then((gltfs) => {
+  const clips = [];
+  for (const gltf of gltfs) { aircraft.add(gltf.scene); clips.push(...gltf.animations); }
+
+  // In the sim, the HTML instrument is painted onto the material with this name.
+  aircraft.traverse(o => {
+    if (o.isMesh && o.material && o.material.name === SCREEN_MATERIAL) {
+      screenTexture = new THREE.CanvasTexture(document.getElementById('efis'));
+      screenTexture.flipY = false;                    // glTF texture convention
+      screenTexture.colorSpace = THREE.SRGBColorSpace;
+      o.material = new THREE.MeshBasicMaterial({ map: screenTexture, toneMapped: false });
+    }
+  });
+
+  mixer = new THREE.AnimationMixer(aircraft);
+  for (const clip of clips) {
+    const a = mixer.clipAction(clip);
+    a.play(); a.paused = true;
+    actions[clip.name] = a;
+  }
+  blurNode = aircraft.getObjectByName('PROPELLER_Blur');
+  bladesNode = aircraft.getObjectByName('PROPELLER');
+  if (blurNode) blurNode.visible = false;
+
+  let tris = 0;
+  aircraft.traverse(o => { if (o.isMesh) tris += o.geometry.index.count / 3; });
+  const size = new THREE.Box3().setFromObject(aircraft).getSize(new THREE.Vector3());
+  status.textContent = `${tris} triangles · span ${size.x.toFixed(2)} m · length ${size.z.toFixed(2)} m · ` +
+                       `${clips.length} animations`;
+  window.__scene = aircraft; window.__THREE = THREE;
+  window.__model = { tris, size: size.toArray(), animations: clips.map(c => c.name), screen: !!screenTexture };
+  applySliders();
+}).catch((err) => { status.textContent = 'Failed to load: ' + err.message; window.__modelError = String(err); });
+
+function setFrame(name, frame) {
+  const a = actions[name];
+  if (a) a.time = Math.min(frame / FPS, a.getClip().duration - 1e-4);
+}
+function applySliders() {
+  if (!mixer) return;
+  for (const [id, names] of Object.entries(SLIDERS)) {
+    const v = +document.getElementById(id).value;
+    for (const n of names) setFrame(n, v);
+  }
+  mixer.update(0);
+  // In the sim the propeller nodes are turned directly (engines.cfg prop_node.0).
+  const angle = +document.getElementById('prop').value / 100 * Math.PI * 2;
+  for (const n of [bladesNode, blurNode]) if (n) n.rotation.z = angle;
+}
+document.querySelectorAll('input[type=range]').forEach(el => el.addEventListener('input', applySliders));
+document.getElementById('reset').onclick = resetView;
+document.getElementById('cockpit').onclick = () => cockpitView();
+document.getElementById('panelview').onclick = () => cockpitView(-14, 45, 0.12);
+window.__view = { resetView, cockpitView, camera, controls };
+document.getElementById('spin').onclick = () => { spinning = !spinning; };
+document.getElementById('blur').onclick = () => {
+  if (!blurNode) return;
+  blurNode.visible = !blurNode.visible;
+  if (bladesNode) bladesNode.visible = !blurNode.visible;
+};
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+renderer.setAnimationLoop(() => {
+  if (spinning) {
+    const s = document.getElementById('prop');
+    s.value = (+s.value + 1.5) % 100;
+    applySliders();
+  }
+  if (screenTexture) screenTexture.needsUpdate = true;
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<ModelBehaviors>
+	<!-- Links the animations in A240.gltf (written by tools/build_model.py) to the simulation,
+	     using the SDK's standard exterior templates. -->
+	<Include ModelBehaviorFile="ASOBO_EX1\\Index.xml"/>
+	<Include ModelBehaviorFile="ASOBO_EX1\\DefaultConfig.xml"/>
+	<Include ModelBehaviorFile="ASOBO_EX1\\ExteriorDefs.xml"/>
+
+	<Component ID="CONFIG">
+		<Parameters Type="Override">
+			<UseParametersFn Name="ASOBO_Configure_Global_Parameters"/>
+		</Parameters>
+	</Component>
+
+	<!-- Each animation runs 0..100: 50 is neutral for the controls, 0 is retracted for flaps. -->
+	<Component ID="HANDLING">
+		<UseTemplate Name="ASOBO_ET_HANDLING_Elevator_Template">
+			<ANIM_NAME>elevator_percent_key</ANIM_NAME>
+		</UseTemplate>
+		<UseTemplate Name="ASOBO_ET_HANDLING_Rudder_Template">
+			<ANIM_NAME>rudder_percent_key</ANIM_NAME>
+		</UseTemplate>
+		<UseTemplate Name="ASOBO_ET_HANDLING_Aileron_Template">
+			<ANIM_NAME_L>l_aileron_percent_key</ANIM_NAME_L>
+			<ANIM_NAME_R>r_aileron_percent_key</ANIM_NAME_R>
+		</UseTemplate>
+		<UseTemplate Name="ASOBO_ET_HANDLING_Flaps_Template">
+			<ANIM_NAME_L>l_flap_percent_key</ANIM_NAME_L>
+			<ANIM_NAME_R>r_flap_percent_key</ANIM_NAME_R>
+		</UseTemplate>
+	</Component>
+
+	<!-- Solid blades when stopped, translucent disc when turning. The sim spins both nodes
+	     itself: see prop_node.0 in common/config/engines.cfg. -->
+	<Component ID="PROPELLER_VISIBILITY">
+		<Parameters Type="Override">
+			<ENG_ID>1</ENG_ID>
+		</Parameters>
+		<UseTemplate Name="ASOBO_ET_ENGINE_Propeller_Model_Swap_RPM_Template">
+			<NODE_VISIBLE_AT_HIGH_RPM>PROPELLER_Blur</NODE_VISIBLE_AT_HIGH_RPM>
+			<NODE_VISIBLE_AT_LOW_RPM>PROPELLER</NODE_VISIBLE_AT_LOW_RPM>
+		</UseTemplate>
+	</Component>
+</ModelBehaviors>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModelInfo>
+	<LODS>
+		<LOD minSize="0" ModelFile="A240.gltf"/>
+	</LODS>
+	<CompileBehaviors version="2">
+		<IncludeBase RelativeFile="A240_Behavior.xml"/>
+	</CompileBehaviors>
+</ModelInfo>

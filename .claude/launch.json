@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "model-viewer",
+      "runtimeExecutable": "py",
+      "runtimeArgs": ["-m", "http.server", "8240", "--bind", "127.0.0.1"],
+      "port": 8240
+    }
+  ]
+}
