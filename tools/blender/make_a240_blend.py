@@ -109,16 +109,43 @@ def fus_out(p):
     return (V(p) - fus_center(p[2])).normalized()
 
 
+def skin_normal(z, phi_deg):
+    """Outward unit normal of the (smooth) skin at (z, phi), including its slope along z."""
+    around = fus_point(z, phi_deg + 0.5) - fus_point(z, phi_deg - 0.5)
+    along = fus_point(z + 0.005, phi_deg) - fus_point(z - 0.005, phi_deg)
+    n = around.cross(along).normalized()
+    return n if n.dot(fus_out(fus_point(z, phi_deg))) > 0 else -n
+
+
+def skin_frame(z, phi_deg):
+    """3x3 frame on the skin at (z, phi): columns = outward, around (phi increasing), along +z."""
+    p = fus_point(z, phi_deg)
+    along = (fus_point(z + 0.01, phi_deg) - fus_point(z - 0.01, phi_deg)).normalized()
+    out = fus_out(p)
+    out = (out - along * out.dot(along)).normalized()
+    return Matrix((out, along.cross(out), along)).transposed()
+
+
 def fuselage_ring(z, n=RING_N, scale=1.0):
     return [fus_point(z, 360.0 * j / n, scale) for j in range(n)]
 
 
-def inner_halfwidth(z, y, scale=0.97):
-    """Half width of the cabin at height y, a touch inside the skin."""
-    hw, yb, yt, e = fuselage_params(z)
-    cy, hh = (yb + yt) / 2, (yt - yb) / 2
-    s = min(abs(y - cy) / hh, 0.999)
-    return hw * (1 - s ** e) ** (1.0 / e) * scale
+def ring_halfwidth(z, y, scale=1.0):
+    """Half width at height y of the polygon fuselage_ring(z, scale) - the shape the mesh
+    really has. Near the belly and the roof, where the section is shallow, the polygon's
+    flat sides lie several mm inside the smooth curve (fus_point)."""
+    ring = fuselage_ring(z, scale=scale)
+    best = 0.0
+    for a, b in zip(ring, ring[1:] + ring[:1]):
+        if a.x >= 0 and b.x >= 0 and a.y != b.y and (a.y - y) * (b.y - y) <= 0:
+            best = max(best, a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y))
+    return best
+
+
+def wall_x(z, y):
+    """Where an interior part should end to meet the cabin wall at height y: 1.5 mm past
+    the lining (so no crack shows) and still well inside the skin (so nothing pokes out)."""
+    return ring_halfwidth(z, y, LINER_SCALE) + 0.0015
 
 
 def fuselage_material(c):
@@ -164,32 +191,69 @@ def build_fuselage(col, parent):
     return obj
 
 
+# The lining sits this far inside the skin (as a fraction of the section), and runs from
+# inside the aft bulkhead to inside the firewall so its ends never show a crack.
+LINER_SCALE = 0.992
+LINER_Z = (-0.95, 0.89)
+BULKHEAD_SCALE = 0.996    # bulkheads reach past the lining, so the lining runs into them
+REVEAL_SCALE = 1.003      # window reveals end just outside the skin, inside the rubber seal
+
+
 def build_liner(col, parent):
     """Cabin lining: the skin between the bulkheads, just inside it, facing inwards.
-    Glazed panels are left open so the pilot sees out."""
-    zs = [z for z in fuselage_stations() if -0.94 - 1e-6 <= z <= 0.95 + 1e-6]
-    mb = MB()
-    rings = [fuselage_ring(z, scale=0.992) for z in zs]
-    idx = [[mb.v(p) for p in r] for r in rings]
+
+    Glazed panels are left open so the pilot sees out. Every opening gets a reveal: a strip
+    from the lining's edge out through the skin, facing into the opening. Without it the
+    few millimetres between the lining and the glass show daylight when you lean towards
+    a window in VR (the sim draws neither side's back faces)."""
+    z0, z1 = LINER_Z
+    zs = [z1] + [z for z in fuselage_stations() if z0 + 1e-6 < z < z1 - 1e-6] + [z0]
     n = RING_N
-    for a, b in zip(idx, idx[1:]):
+    mb = MB()
+    inner = [[mb.v(p) for p in fuselage_ring(z, scale=LINER_SCALE)] for z in zs]
+    outer = {}
+
+    def outer_v(r, c):                    # skin-side corner of a reveal, made when needed
+        if (r, c) not in outer:
+            outer[(r, c)] = mb.v(fus_point(zs[r], 360.0 * c / n, REVEAL_SCALE))
+        return outer[(r, c)]
+
+    def quad(i, j):
+        k = (j + 1) % n
+        return [inner[i][j], inner[i][k], inner[i + 1][k], inner[i + 1][j]]
+
+    glazed = {}
+    for i in range(len(zs) - 1):
         for j in range(n):
-            k = (j + 1) % n
-            q = [a[j], a[k], b[k], b[j]]
-            c = centroid([mb.verts[i] for i in q])
-            if fuselage_material(c).startswith("glass"):
+            c = centroid([mb.verts[q] for q in quad(i, j)])
+            glazed[(i, j)] = fuselage_material(c).startswith("glass")
+    for (i, j), is_glass in glazed.items():
+        if is_glass:
+            continue
+        k = (j + 1) % n
+        q = quad(i, j)
+        c = centroid([mb.verts[x] for x in q])
+        mb.f_toward(q, "liner", fus_center(c[2]) - c)
+        # the four edges of this panel: (neighbour across it, edge as (row, col) pairs)
+        for nb, edge in (((i - 1, j), ((i, j), (i, k))), ((i + 1, j), ((i + 1, j), (i + 1, k))),
+                         ((i, (j - 1) % n), ((i, j), (i + 1, j))), ((i, k), ((i, k), (i + 1, k)))):
+            if not glazed.get(nb):
                 continue
-            mb.f(q, "liner")
-    return make_object("Cabin_Liner", mb, col, parent, smooth=30,
-                       normals=lambda p: fus_center(p[2]) - p)
+            (ra, ca), (rb, cb) = edge
+            strip = [inner[ra][ca], inner[rb][cb], outer_v(rb, cb), outer_v(ra, ca)]
+            mid = centroid([mb.verts[x] for x in strip])
+            mb.f_toward(strip, "liner", centroid([mb.verts[x] for x in quad(*nb)]) - mid)
+    return make_object("Cabin_Liner", mb, col, parent, smooth=30, normals=None)
 
 
 def panel_line(mb, pts, width=0.004, height=0.0012, mat="black", closed=False):
-    """A thin dark strip lying on the skin along pts (skin points)."""
+    """A thin dark strip standing `height` proud of the skin along pts (skin points). Its
+    foot is sunk 1 mm into the skin, so no gap shows under its edges."""
     outs = [fus_out(p) for p in pts]
-    lifted = [V(p) + o * 0.0008 for p, o in zip(pts, outs)]
-    prof = [(0, -width / 2), (height, -width / 2), (height, width / 2), (0, width / 2)]
-    mb.sweep(lifted, mat=mat, profile=prof, ups=outs, closed=closed)
+    sunk = [V(p) - o * 0.001 for p, o in zip(pts, outs)]
+    h = height + 0.001
+    prof = [(0, -width / 2), (h, -width / 2), (h, width / 2), (0, width / 2)]
+    mb.sweep(sunk, mat=mat, profile=prof, ups=outs, closed=closed)
 
 
 def build_fuselage_details(col, parent, fus_obj):
@@ -220,27 +284,30 @@ def build_fuselage_details(col, parent, fus_obj):
         def dp(z, a):
             return fus_point(z, a if side > 0 else 180 - a)
         outline = ([dp(0.29, a) for a in range(-27, 53, 4)] +
-                   [dp(z, 52) for z in [0.29 - i * 0.06 for i in range(20)]] +
+                   [dp(z, 52) for z in [0.29 - i * 0.06 for i in range(19)]] +
                    [dp(-0.84, a) for a in range(52, -28, -4)] +
                    [dp(z, -27) for z in [-0.84 + i * 0.06 for i in range(19)]])
         panel_line(mb, outline, closed=True)
         for z in (0.12, -0.62):
             p = dp(z, 53.5)
             o = fus_out(p)
-            mb.tube(p + o * 0.004 + V(0, 0, 0.035), p + o * 0.004 - V(0, 0, 0.035), 0.009, n=10, mat="metal")
+            # sunk 2.5 mm into the skin: any deeper and it shows through the cabin lining
+            mb.tube(p + o * 0.0065 + V(0, 0, 0.035), p + o * 0.0065 - V(0, 0, 0.035), 0.009, n=10, mat="metal")
         hp = dp(-0.70, -14)
         o = fus_out(hp)
         mb.sweep([hp + o * 0.002, hp + o * 0.022, hp + o * 0.022 - V(0, 0, 0.10)], radius=0.008,
                  n=8, mat="black")
-    # fresh-air scoops either side of the windshield base
+    # fresh-air scoops either side of the windshield base, laid along the tapering skin
+    # and sunk only 3 mm into it (deeper and they would show through the cabin lining)
     for side in (-1, 1):
-        p = fus_point(0.86, 8 if side > 0 else 172)
-        o = fus_out(p)
-        mb.ellipsoid(p + o * 0.004, 0.018, 0.022, 0.05, "black", nu=6, nv=10)
+        a = 8 if side > 0 else 172
+        p = fus_point(0.86, a)
+        mb.ellipsoid(p + skin_frame(0.86, a).col[0] * 0.009, 0.012, 0.022, 0.05, "black", nu=6, nv=10,
+                     rot=skin_frame(0.86, a))
     # exhaust: tailpipe out of the cowl exit, slightly to the right
-    mb.sweep([(0.08, -0.42, 1.05), (0.09, -0.50, 1.01), (0.10, -0.555, 0.94)], radius=0.021, n=14,
+    mb.sweep([(0.08, -0.40, 1.06), (0.09, -0.50, 1.01), (0.10, -0.555, 0.94)], radius=0.021, n=14,
              mat="metal_dark")
-    mb.sweep([(-0.08, -0.43, 1.06), (-0.08, -0.52, 1.03)], radius=0.016, n=12, mat="metal_dark")
+    mb.sweep([(-0.08, -0.40, 1.07), (-0.08, -0.52, 1.03)], radius=0.016, n=12, mat="metal_dark")
     # LED landing / taxi lights in the cowl front, under the spinner
     for side in (-1, 1):
         mb.ellipsoid((side * 0.065, -0.145, 1.600), 0.022, 0.016, 0.012, "lens_clear", nu=6, nv=14)
@@ -357,6 +424,12 @@ def roof_y(x, z):
     return cy + hh * (1 - u ** e) ** (1.0 / e)
 
 
+def lining_y(x, z):
+    """Height of the cabin lining's ceiling at lateral position x, station z."""
+    cy = fus_center(z).y
+    return cy + LINER_SCALE * (roof_y(x / LINER_SCALE, z) - cy)
+
+
 def wing_tip_stations():
     # (x, chord scale, LE set-back, thickness scale): straight panel, then the moulded tip
     # cap. The real tip is square in plan with only its edges rounded off.
@@ -376,16 +449,28 @@ def build_wing(side, col, parent):
         loop = airfoil_loop(m, p, t * ts, n=24)
         chord = WING_CHORD * cs
         rings.append(section((side * x, WING_Y, WING_LE_Z - setback), chord, WCD, WTD, loop))
-    # root fairing: the root section carried inboard over the cabin roof, its lower
-    # surface laid onto the roof, so there is no gap between wing and cabin
+    # root fairing: the root section carried inboard over the cabin roof. Its underside is
+    # sunk 2 mm into the roof - no crack between wing and cabin, yet clear of the cabin
+    # lining - and its top stays above that, so every section is a clean outline (the old
+    # one folded over itself and showed through the skylight). The outer station comes
+    # down onto the strip of roof above the door window, closing the slot under the wing
+    # root. The inner and outer stations follow the cabin's taper so the fairing never
+    # overhangs the skylight or the door glass (seen through them, a sunk edge would show
+    # the inside of the wing).
     root = rings[0]
+    n_up = (len(root) + 2) // 2            # upper surface TE -> LE, then lower LE -> TE
     fairing = []
-    for x in (0.38, 0.44):
+    for station in ("skylight", 0.44, "door"):
         ring = []
-        for rp in root:
-            q = V(side * x, rp.y, rp.z)
-            q.y = max(q.y, roof_y(x, q.z) + 0.004)
-            ring.append(q)
+        for k, rp in enumerate(root):
+            if station == "skylight":
+                x = max(0.38, fus_point(rp.z, 55.5).x)
+            elif station == "door":
+                x = min(0.49, fus_point(rp.z, 46.5).x)
+            else:
+                x = station
+            base = roof_y(x, rp.z)
+            ring.append(V(side * x, base - 0.002 if k >= n_up else max(rp.y, base + 0.006), rp.z))
         fairing.append(ring)
     rings = fairing + rings
     mb.loft(rings, lambda c: "paint_red" if abs(c[0]) > WING_PAINT_X else "paint_white")
@@ -411,9 +496,9 @@ def build_wing(side, col, parent):
     mb.disc(pt + nrm * 0.004, nrm, 0.036, 0.008, n=20, mat="metal")
     mb.rbox(pt + nrm * 0.010, (0.05, 0.010, 0.012), 0.003, "metal",
             rot=Matrix.Rotation(math.atan2(nrm.z, nrm.y), 3, "X"))
-    # fold fittings at the rear spar root, strut fittings under the wing
+    # fold fittings at the rear spar root (just outboard of the fairing), strut fittings
     for xc in (0.62,):
-        pt, nrm = wing_point(side, 0.47, xc, False)
+        pt, nrm = wing_point(side, 0.53, xc, False)
         mb.rbox(pt - V(0, 0.012, 0), (0.06, 0.03, 0.05), 0.006, "metal")
     for xc in (0.24, 0.80):
         pt, nrm = wing_point(side, 2.55, xc, False)
@@ -440,7 +525,7 @@ def build_wing(side, col, parent):
         mb.sweep(mast, radius=0.006, n=10, mat="metal")
         mb.rbox(pt - V(0, 0.04, 0), (0.008, 0.10, 0.05), 0.003, "metal")
         le, _ = wing_point(side, 1.55, 0.012, False)
-        mb.rbox(le + V(0, -0.006, 0.012), (0.02, 0.003, 0.025), 0.001, "metal")
+        mb.rbox(le + V(0, -0.001, 0.006), (0.02, 0.003, 0.025), 0.001, "metal")      # tab out of the LE
     # navigation (red left / green right) and strobe lenses on the tip
     tip_x = side * (WING_TIP_X - 0.003)
     mb.ellipsoid((tip_x, WING_Y + 0.02, -0.12), 0.016, 0.024, 0.055, "lens_red" if side < 0 else "lens_green",
@@ -619,7 +704,7 @@ def build_gear(col, parent):
     for i in range(5):                                                                  # spring
         t = 0.2 + 0.15 * i
         c = shock_hi + (shock_lo - shock_hi) * t
-        mb.sweep([c + V(0.026 * math.cos(a), 0, 0.026 * math.sin(a))
+        mb.sweep([c + V(0.0215 * math.cos(a), 0, 0.0215 * math.sin(a))
                   for a in [2 * math.pi * j / 16 for j in range(16)]],
                  radius=0.006, n=6, mat="metal", closed=True)
     mb.rbox(mid + V(0, -0.02, 0), (0.17, 0.035, 0.07), 0.01, "metal")                   # fork crown
@@ -925,12 +1010,9 @@ def pp(x, d, dz=0.0):
 
 
 def bulkhead(mb, z0, z1, mat="panel"):
-    rings = []
-    for z in (z0, z1):
-        ring = fuselage_ring(z, n=48)
-        c = centroid(ring)
-        rings.append([c + (p - c) * 0.985 for p in ring])
-    mb.loft(rings, mat)
+    """A bulkhead plate from z0 to z1. It is cut from the same ring as the cabin lining but
+    a little larger, so the lining runs into it and no daylight shows round its edge."""
+    mb.loft([fuselage_ring(z, scale=BULKHEAD_SCALE) for z in (z0, z1)], mat)
 
 
 def rounded_poly(pts, r, n=3):
@@ -1015,7 +1097,7 @@ def gauge(mb, cx, cy, r, arcs=(), ticks=12, needle_deg=40, mat_face="gauge_face"
     d = V(math.sin(a), math.cos(a), 0)
     slab(c - d * (r * 0.15) + V(0, 0, -0.0042), c + d * (r * 0.85) + V(0, 0, -0.0042), 0.0015, "gauge_mark",
          thick=0.0006)
-    mb.disc(c + V(0, 0, -0.005), (0, 0, 1), r * 0.10, 0.002, n=12, mat="black")
+    mb.disc(c + V(0, 0, -0.0045), (0, 0, 1), r * 0.10, 0.0032, n=12, mat="black")    # hub, on the dial
 
 
 def toggle(mb, x, y, angle=20, z=PANEL_Z):
@@ -1067,14 +1149,42 @@ def build_g3x(mb):
     mb.rbox(pp(g["x"], kd, fz - 0.0021), (0.025, 0.0025, 0.0004), 0.0, "inlet_dark")      # SD card slot
 
 
+GLARESHIELD_Z = (0.484, 0.49, 0.52, 0.56, 0.60, 0.64, 0.68, 0.71, 0.74, 0.77, 0.80, 0.83, 0.86, 0.885)
+
+
+def glareshield_section(zz):
+    """Cross-section of the glareshield at station zz: upper surface left to right, then
+    the lower surface back. Its edges stay below the windshield's lower edge and its top
+    below the glass, so it closes the cabin off from the space behind the panel."""
+    ytop = 0.300 + (zz - 0.484) * 0.21
+    lip = 0.006 if zz < 0.50 else 0.0
+    up_e = min(ytop + 0.014, fus_point(zz, 45).y - 0.010)   # edge height on the wall
+    lo_e = min(ytop - lip, up_e - 0.012)
+    w_up = wall_x(zz, up_e)
+    w_lo = wall_x(zz, lo_e)
+
+    def upper(x):
+        return min(up_e + 0.010 * (1 - (x / w_up) ** 2), roof_y(x, zz) - 0.005)
+
+    ring = []
+    for i in range(13):                           # upper surface, left to right
+        x = -w_up + 2 * w_up * i / 12
+        ring.append(V(x, upper(x), zz))
+    for i in range(13):                           # lower surface, right to left
+        x = w_lo - 2 * w_lo * i / 12
+        ring.append(V(x, min(lo_e + 0.005 * (1 - (x / w_lo) ** 2), upper(min(abs(x), w_up)) - 0.012), zz))
+    return ring
+
+
 def build_panel(mb):
     z = PANEL_Z
-    # black backing that closes the cabin cross-section behind and beside the panel
+    # black backing that closes the cabin cross-section behind and beside the panel; its
+    # sides run just past the cabin lining, so there is no crack at the walls
     rings = []
     ys = [0.004, 0.03, 0.08, 0.13, 0.18, 0.23, 0.27, 0.302]
     for zz in (z + PANEL_T, z + 0.04):
-        left = [V(-min(inner_halfwidth(zz, y, 0.965), 0.53), y, zz) for y in ys]
-        right = [V(min(inner_halfwidth(zz, y, 0.965), 0.53), y, zz) for y in reversed(ys)]
+        left = [V(-wall_x(zz, y), y, zz) for y in ys]
+        right = [V(wall_x(zz, y), y, zz) for y in reversed(ys)]
         rings.append(left + right)
     mb.loft(rings, "black")
     # the panel itself: grey sheet with the arched top of the render
@@ -1093,24 +1203,12 @@ def build_panel(mb):
         po, pi = p + nrm * 0.0015, p - nrm * w
         rings.append([po + V(0, 0, 0.004), po + V(0, 0, -0.016), pi + V(0, 0, -0.012), pi + V(0, 0, 0.004)])
     mb.loft(rings, "black")
-    # glareshield: a padded hood from the panel top forward to the windshield, its
-    # width following the narrowing nose so it stays inside the glazing
-    rings = []
-    for zz in (0.484, 0.49, 0.52, 0.56, 0.60, 0.64, 0.68, 0.70):
-        ytop = 0.300 + (zz - 0.484) * 0.21
-        w = min(0.50, inner_halfwidth(zz, ytop + 0.014, 0.955))
-        lip = 0.006 if zz < 0.50 else 0.0
-        ring = []
-        for i in range(13):                       # upper surface, left to right
-            x = -w + 2 * w * i / 12
-            sag = 0.010 * (1 - (x / w) ** 2)
-            ring.append(V(x, ytop + 0.014 + sag, zz))
-        for i in range(13):                       # lower surface, right to left
-            x = w - 2 * w * i / 12
-            sag = 0.010 * (1 - (x / w) ** 2)
-            ring.append(V(x, ytop - lip + sag * 0.5, zz))
-        rings.append(ring)
-    mb.loft(rings, "black")
+    # glareshield: a padded hood from the panel top forward to the firewall. It is as wide
+    # as the cabin, and ahead of the panel it follows the windshield down a few mm below
+    # the glass, so it meets the walls and the windshield base with no slot: in VR you
+    # cannot look past it into the space behind the panel, or from the footwell up
+    # through the bottom of the windshield.
+    mb.loft([glareshield_section(zz) for zz in GLARESHIELD_Z], "black")
 
     build_g3x(mb)
 
@@ -1248,13 +1346,24 @@ def build_seat(mb, cx):
     mb.rbox(base + V(0, 0.05, 0.0), (0.34, 0.04, 0.42), 0.018, "seat_fabric", rot=rot_x(5))
     for dx in (-0.14, 0.14):                              # side bolsters
         mb.rbox(base + V(dx, 0.055, 0.0), (0.06, 0.05, 0.42), 0.022, "seat", rot=rot_x(5))
-    pivot = V(cx, -0.40, -0.47)
+    pivot = V(cx, -0.40, -0.45)          # the back's lower edge rests on the cushion's rear
     back_c = pivot + tilt @ V(0, 0.33, -0.05)
     mb.rbox(back_c, (0.40, 0.64, 0.07), 0.025, "seat", rot=tilt)
     mb.rbox(back_c + tilt @ V(0, -0.02, 0.04), (0.33, 0.54, 0.03), 0.014, "seat_fabric", rot=tilt)
     for dx in (-0.15, 0.15):
         mb.rbox(back_c + tilt @ V(dx, -0.04, 0.045), (0.05, 0.48, 0.05), 0.02, "seat", rot=tilt)
     # four-point harness lying on the seat, with buckle
+    strap_profile = [(0, -0.022), (0.003, -0.022), (0.003, 0.022), (0, 0.022)]
+
+    def strap(pts, ups):
+        """Sweep a strap, splitting each run in four so its faces stay flat where it bends
+        and twists (large warped faces cross over each other and open holes)."""
+        P, U = [], []
+        for i in range(len(pts) - 1):
+            for k in range(4):
+                P.append(pts[i].lerp(pts[i + 1], k / 4))
+                U.append(ups[i].lerp(ups[i + 1], k / 4).normalized())
+        mb.sweep(P + [pts[-1]], mat="belt", ups=U + [ups[-1]], profile=strap_profile)
     buckle = V(cx, -0.343, -0.20)
     front = tilt @ V(0, 0, 1)
     for dx in (-0.065, 0.065):
@@ -1268,12 +1377,15 @@ def build_seat(mb, cx):
         pts = [behind, rear_top, top, over, down, crease, buckle + V(dx * 0.35, 0.0, -0.03)]
         back = tilt @ V(0, 0, -1)
         ups = [back, back, tilt @ V(0, 1, 0), front, front, V(0, 1, 0), V(0, 1, 0)]
-        mb.sweep(pts, mat="belt", ups=ups, profile=[(0, -0.022), (0.003, -0.022), (0.003, 0.022), (0, 0.022)])
+        strap(pts, ups)
     for dx in (-0.2, 0.2):
-        mb.sweep([V(cx + dx, -0.40, -0.40), V(cx + dx * 0.8, -0.35, -0.32), buckle + V(dx * 0.15, 0, 0)],
-                 mat="belt", ups=[V(0, 1, 0)] * 3,
-                 profile=[(0, -0.022), (0.003, -0.022), (0.003, 0.022), (0, 0.022)])
+        strap([V(cx + dx, -0.40, -0.40), V(cx + dx * 0.8, -0.35, -0.32), buckle + V(dx * 0.15, 0, 0)],
+              [V(0, 1, 0)] * 3)
     mb.rbox(buckle + V(0, 0.004, 0), (0.06, 0.008, 0.06), 0.006, "chrome")
+    # pedestal under the cushion and a support under the seat back, down into the carpet,
+    # so the seat stands on the floor instead of hovering over it
+    mb.rbox(V(cx, -0.465, -0.26), (0.32, 0.05, 0.40), 0.008, "seat")
+    mb.rbox(V(cx, -0.445, -0.49), (0.30, 0.10, 0.05), 0.008, "seat")
 
 
 def build_controls(mb, cx):
@@ -1297,44 +1409,60 @@ def build_controls(mb, cx):
         piv = V(x, -0.475, 0.70)
         plate = V(x, -0.38, 0.725)
         mb.tube(piv, plate, 0.008, n=8, mat="metal")
-        mb.rbox(plate + V(0, 0.01, -0.004), (0.065, 0.11, 0.014), 0.006, "black", rot=rot_x(-20))
-        for k in range(4):
-            mb.rbox(plate + V(0, -0.035 + k * 0.024, -0.013), (0.06, 0.004, 0.004), 0.0012, "metal",
-                    rot=rot_x(-20))
+        pedal, tilt = plate + V(0, 0.01, -0.004), rot_x(-20)
+        mb.rbox(pedal, (0.065, 0.11, 0.014), 0.006, "black", rot=tilt)
+        for k in range(4):            # grip ribs, set into the pedal's face
+            mb.rbox(pedal + tilt @ V(0, -0.045 + k * 0.024, -0.0085), (0.06, 0.004, 0.004), 0.0012, "metal",
+                    rot=tilt)
     mb.tube(V(cx - 0.12, -0.475, 0.70), V(cx + 0.12, -0.475, 0.70), 0.009, n=8, mat="metal")
+
+
+def frame_point(z, phi_deg, radius):
+    """Centre of a cage tube of `radius` running along the skin at (z, phi): its outside
+    3 mm in from the skin, measured along the skin's normal (which matters where the
+    windshield slopes steeply), so the tube is set into the cabin lining - mounted on the
+    wall rather than floating in front of it - and never shows through the skin."""
+    return fus_point(z, phi_deg) - skin_normal(z, phi_deg) * (radius + 0.003)
 
 
 def build_frame(mb):
     """Visible steel tube cage: roof bows, door frames, sills, A-pillars."""
-    s = 0.962
-    mb.sweep([fus_point(0.285, a, s) for a in range(18, 163, 6)], radius=0.012, n=10, mat="frame")
-    mb.sweep([fus_point(-0.62, a, s) for a in range(54, 127, 6)], radius=0.012, n=10, mat="frame")
+    def bar(pts, radius=0.012):
+        mb.sweep([frame_point(z, a, radius) for z, a in pts], radius=radius, n=10, mat="frame")
+    bar([(0.285, a) for a in range(18, 163, 6)])
+    bar([(-0.62, a) for a in range(54, 127, 6)])
     for side in (-1, 1):
-        def sp(z, a):
-            return fus_point(z, a if side > 0 else 180 - a, s)
-        mb.sweep([sp(z, 47) for z in [0.80 - i * 0.05 for i in range(11)]], radius=0.012, n=10, mat="frame")
-        mb.sweep([sp(z, 52.5) for z in [0.29 - i * 0.07 for i in range(17)]], radius=0.012, n=10, mat="frame")
-        mb.sweep([sp(z, -25) for z in [0.78 - i * 0.07 for i in range(24)]], radius=0.014, n=10, mat="frame")
-        mb.sweep([sp(-0.86, a) for a in range(-40, 58, 7)], radius=0.012, n=10, mat="frame")
-        # door: inside handle and the edge of the glazing frame
-        h = sp(-0.62, -10)
-        mb.rbox(h + V(-side * 0.012, 0, 0), (0.018, 0.022, 0.12), 0.006, "black")
+        def ph(a):
+            return a if side > 0 else 180 - a
+        bar([(z, ph(47)) for z in [0.79 - i * 0.049 for i in range(11)]])
+        bar([(z, ph(52.5)) for z in [0.29 - i * 0.07 for i in range(17)]])
+        bar([(z, ph(-25)) for z in [0.78 - i * 0.07 for i in range(24)]], radius=0.014)
+        bar([(-0.86, a) for a in [ph(a) for a in range(-40, 58, 7)]])
+        # inside door handle: a grip on two feet that stand on the door's plexiglass
+        fr = skin_frame(-0.62, ph(-10))
+        mb.rbox(fus_point(-0.62, ph(-10)) - fr.col[0] * 0.020, (0.012, 0.022, 0.12), 0.005, "black", rot=fr)
+        for zf in (-0.572, -0.668):
+            ff = skin_frame(zf, ph(-10))
+            mb.rbox(fus_point(zf, ph(-10)) - ff.col[0] * 0.0102, (0.0185, 0.016, 0.014), 0.003, "black", rot=ff)
 
 
 def build_cabin_interior(col, parent):
     mb = MB()
     bulkhead(mb, 0.90, 0.88, "panel")                   # firewall
     bulkhead(mb, -0.94, -0.96, "liner")                 # aft bulkhead
-    # carpeted floor that follows the cabin width, rising into the footwell
-    zs = [-0.94, -0.6, -0.2, 0.2, 0.5, 0.65, 0.80, 0.86]
-    top, bot = [], []
+    # carpeted floor that follows the cabin width, rising into the footwell. Its top edges
+    # run just past the cabin lining and its ends into the bulkheads, so no crack shows at
+    # the walls; its underside is narrower and thins out where the belly rises towards the
+    # tail, so it stays inside the skin.
+    z0, z1 = LINER_Z
+    zs = sorted({z0, z1, 0.62} | {z for z in fuselage_stations() if z0 < z < z1})
+    rings = []
     for z in zs:
         y = -0.485 if z < 0.62 else -0.485 + (z - 0.62) * 0.12
-        w = inner_halfwidth(z, y, 0.975)
-        top.append((V(-w, y, z), V(w, y, z)))
-    rings = []
-    for (l, r) in top:
-        rings.append([l, r, r - V(0, 0.015, 0), l - V(0, 0.015, 0)])
+        cy, yb = fus_center(z).y, fuselage_params(z)[1]
+        yu = max(y - 0.015, cy + 0.985 * (yb - cy))
+        wt, wb = wall_x(z, y), ring_halfwidth(z, yu, LINER_SCALE) - 0.002
+        rings.append([V(-wt, y, z), V(wt, y, z), V(wb, yu, z), V(-wb, yu, z)])
     mb.loft(rings, "carpet")
     # centre console with fuel valve and park brake
     mb.rbox((0, -0.462, -0.05), (0.10, 0.05, 0.72), 0.012, "panel")
@@ -1344,7 +1472,7 @@ def build_cabin_interior(col, parent):
     mb.tube(V(0.0, -0.437, 0.25), V(0.0, -0.37, 0.30), 0.006, n=8, mat="metal")
     mb.ellipsoid((0.0, -0.365, 0.303), 0.012, 0.012, 0.02, "black", nu=4, nv=8)
     # flap lever with notched quadrant, and the trim lever beside it
-    mb.rbox((0, -0.43, -0.22), (0.012, 0.07, 0.16), 0.004, "metal")
+    mb.rbox((0, -0.415, -0.22), (0.012, 0.10, 0.16), 0.004, "metal")
     for i in range(4):
         a = math.radians(30 + i * 15)
         mb.rbox((0, -0.43 + 0.06 * math.sin(a), -0.27 + 0.06 * math.cos(a)), (0.014, 0.006, 0.006), 0.001, "black")
@@ -1352,23 +1480,30 @@ def build_cabin_interior(col, parent):
     mb.tube(V(0.0, -0.30, -0.16), V(0.0, -0.26, -0.13), 0.016, 0.014, n=12, mat="knob_red")
     mb.tube(V(0.035, -0.44, -0.30), V(0.035, -0.36, -0.25), 0.005, n=8, mat="metal")
     mb.ellipsoid((0.035, -0.355, -0.247), 0.01, 0.012, 0.018, "black", nu=4, nv=8)
-    # baggage shelf and a fire extinguisher behind the seats
-    w = inner_halfwidth(-0.78, -0.30, 0.95)
-    mb.rbox((0, -0.31, -0.78), (2 * w, 0.02, 0.30), 0.006, "carpet")
-    mb.rbox((0, -0.27, -0.635), (2 * w * 0.98, 0.07, 0.012), 0.004, "panel")
+    # baggage shelf and its front lip, wall to wall (the cabin tapers here, so their sides
+    # follow it) and into the aft bulkhead; and a fire extinguisher behind the seats
+    def wall_slab(z0, z1, y0, y1, mat):
+        mb.loft([[V(-wall_x(zz, y1), y1, zz), V(wall_x(zz, y1), y1, zz), V(wall_x(zz, y0), y0, zz),
+                  V(-wall_x(zz, y0), y0, zz)] for zz in (z0, z1)], mat)
+    wall_slab(-0.945, -0.63, -0.32, -0.30, "carpet")
+    wall_slab(-0.641, -0.629, -0.305, -0.235, "panel")
     mb.tube(V(0.30, -0.30, -0.80), V(0.30, -0.10, -0.80), 0.035, n=16, mat="knob_red")
     mb.tube(V(0.30, -0.10, -0.80), V(0.30, -0.075, -0.80), 0.014, n=10, mat="black")
     mb.tube(V(0.30, -0.08, -0.80), V(0.30, -0.08, -0.74), 0.005, n=6, mat="black")
     for y in (-0.26, -0.16):
         mb.sweep([V(0.30 + 0.039 * math.cos(a), y, -0.80 + 0.039 * math.sin(a)) for a in
                   [2 * math.pi * j / 16 for j in range(16)]], radius=0.004, n=5, mat="metal", closed=True)
-    # fuel sight gauges at the wing roots, and the overhead skylight sunshade frame
+    # fuel sight gauges hanging from the roof at the wing roots (the tanks are above them),
+    # beside the skylight; the top fitting is set into the lining
     for side in (-1, 1):
-        x = side * 0.36
-        mb.tube(V(x, 0.42, 0.05), V(x, 0.58, 0.05), 0.008, n=10, mat="glass")
-        mb.tube(V(x, 0.44, 0.05), V(x, 0.53, 0.05), 0.0065, n=8, mat="placard")
-        for y in (0.42, 0.58):
-            mb.rbox((x, y, 0.05), (0.03, 0.014, 0.03), 0.004, "metal")
+        x, z = side * 0.40, 0.05
+        slope = (lining_y(x + 0.005, z) - lining_y(x - 0.005, z)) / 0.01
+        up = V(-slope, 1, 0).normalized()                         # ceiling normal here
+        top = V(x, lining_y(x, z), z) - up * 0.005                # fitting 2 mm into the lining
+        mb.tube(V(x, 0.45, z), top, 0.008, n=10, mat="glass")
+        mb.tube(V(x, 0.45, z), V(x, 0.54, z), 0.0065, n=8, mat="placard")       # fuel
+        mb.rbox((x, 0.45, z), (0.024, 0.014, 0.03), 0.004, "metal")
+        mb.rbox(top, (0.024, 0.014, 0.03), 0.004, "metal", rot=rot_z(math.degrees(math.atan(slope))))
     build_panel(mb)
     build_frame(mb)
     for side in (-1, 1):

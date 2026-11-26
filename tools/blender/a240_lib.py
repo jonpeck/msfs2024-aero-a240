@@ -93,7 +93,9 @@ MATERIALS = {
     "glass":        _m((0.86, 0.86, 0.85), a=0.03, rough=0.05, kind="msfs_glass", **GLASS),
     "glass_tint":   _m((0.20, 0.27, 0.24), a=0.10, rough=0.05, kind="msfs_glass", **GLASS),
     # trim and hardware
-    "rubber":       _m((0.035, 0.035, 0.035), rough=0.80),
+    # double-sided: the window seals cross the glass, and at their joints a stray back
+    # face would otherwise show a pinhole of sky
+    "rubber":       _m((0.035, 0.035, 0.035), rough=0.80, msfs_double_sided=True),
     "tire":         _m((0.03, 0.03, 0.03), rough=0.92),
     "black":        _m((0.04, 0.04, 0.04), rough=0.55),
     "inlet_dark":   _m((0.012, 0.012, 0.012), rough=0.95),
@@ -176,6 +178,19 @@ class MB:
         self.fmat.append(mat)
         if uv:
             self.uv[len(self.faces) - 1] = uv
+
+    def f_toward(self, idx, mat, direction):
+        """Add a face wound so that its front side looks along `direction` (sim frame).
+
+        The sim culls back faces, so for single-sided sheets the winding decides which side
+        can be seen. B() mirrors (det -1), so the winding is checked in Blender space."""
+        pts = [B(self.verts[i]) for i in idx]
+        n = Vector((0.0, 0.0, 0.0))
+        for a, b in zip(pts, pts[1:] + pts[:1]):           # Newell normal
+            n += a.cross(b)
+        if n.dot(B(direction)) < 0:
+            idx = list(idx)[::-1]
+        self.f(idx, mat)
 
     def extend(self, other):
         off = len(self.verts)
@@ -323,7 +338,8 @@ def make_object(name, mb, collection, parent=None, pivot=(0, 0, 0), smooth=35.0,
     """Turn an MB into a mesh object whose origin sits at `pivot` (sim frame).
 
     normals: "outside" recalculates per closed island; a function f(sim_point) -> sim vector
-    orients each face towards that direction (for open sheets).
+    orients each face towards that direction (for open sheets); None keeps the winding as
+    built (see MB.f_toward).
     """
     pivot = Vector(pivot)
     me = bpy.data.meshes.new(name)

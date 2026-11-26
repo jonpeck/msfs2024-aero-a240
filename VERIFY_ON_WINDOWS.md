@@ -4,6 +4,8 @@ Checklist for the first build and flight after two changes:
 
 - the cockpit rebuilt as Aeropro's G3X Touch panel
 - the engine switched to the Rotax 915 iS
+- the seams closed for VR: window reveals, bulkheads, floor, panel backing and glareshield
+  to the walls, the wing-root fairing, and parts that floated or poked through
 
 These changes were written and test-rendered on Linux, without the MSFS SDK and without
 the sim. Nothing below has been checked yet. Run the steps in order, and note anything
@@ -25,8 +27,15 @@ This overwrites `blender\A240.blend`. It loads the SDK's exporter from
 `C:\MSFS 2024 SDK\Tools\Blender`. If the SDK is installed somewhere else, set
 `$env:MSFS2024_SDK` first.
 
-- [ ] It ends with `saved ...\A240.blend: 28 objects, ~96000 triangles`. The Linux test
-      build gave 96,334 triangles.
+- [ ] It ends with `saved ...\A240.blend: 28 objects, ~99000 triangles`. The Linux test
+      build gave 99,166 triangles.
+- [ ] The VR gap check passes on the new .blend:
+
+      ```
+      "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b blender\A240.blend --python-exit-code 1 --python tools\blender\check_vr_gaps.py
+      ```
+
+      It ends with `VR gap check passed`, as it did on Linux.
 
 ## 2. Export the models and render previews
 
@@ -71,9 +80,18 @@ Load the A240 on a runway, then once more cold and dark.
 - [ ] No flickering surfaces (z-fighting), for example on the labels, the map box or the
       console plate under the throttle.
 - [ ] Nothing pokes through anything else: the yellow lever, the throttle and the sticks.
-- [ ] The view over the glareshield from the default pilot camera is acceptable. The
-      panel top and glareshield are where they were before; only the panel below changed.
+- [ ] The view over the glareshield from the default pilot camera is acceptable. Its top
+      over the panel is where it was before. It now reaches the cabin walls and runs
+      forward under the windshield to the windshield's base.
 - [ ] By day and at night, the black backing beside the panel doesn't look odd.
+- [ ] In VR (or by moving the camera around, without a headset), no daylight or
+      background shows at any seam, and nothing floats free of the wall. Places to look:
+      - lean towards each door window and along the skylight and windshield edges
+      - behind the seats, at the edge of the aft bulkhead and the baggage shelf
+      - down beside the seats and under the seat backs
+      - under the panel into the footwell, and up behind the panel
+      - over the glareshield, where it meets the windshield
+      - from outside: the wing root, the belly and the door windows
 
 ## 5. Cockpit: the G3X Touch
 
@@ -183,6 +201,8 @@ empty CG moved forward from 0.25 to 0.57 ft.
 
 - The build output if it reported problems, and any G3X console errors.
 - Screenshots: the panel from the pilot's seat, and the G3X with the engine running.
+- Any seam where daylight or background shows in VR, with a screenshot and where you
+  were looking from.
 - The engine numbers: idle RPM; static RPM, manifold pressure, power and fuel flow; full
   throttle and 5500 RPM in level flight (RPM, power, speed); manifold pressure at 10,000,
   15,000 and 17,000 ft.

@@ -14,7 +14,7 @@ model lives in `blender\A240.blend` and is exported with the SDK's Blender expor
 | Part | State |
 | --- | --- |
 | SDK package build | Builds with no problems reported by the SDK builder |
-| 3D model (exterior + cockpit) | Detailed Blender model (~96k triangles). The instrument panel is traced from Aeropro's 2025 render of its Garmin panel (see [Instrument panel](#instrument-panel)). **Not yet built with the SDK or seen in the sim** - the earlier low-detail model was |
+| 3D model (exterior + cockpit) | Detailed Blender model (~99k triangles). The instrument panel is traced from Aeropro's 2025 render of its Garmin panel (see [Instrument panel](#instrument-panel)). Seams checked for VR with `check_vr_gaps.py` (see [Check for VR gaps](#check-for-vr-gaps)). **Not yet built with the SDK or seen in the sim** - the earlier low-detail model was |
 | Flight / engine / systems configs | Written from published A240 figures. Controls and hands-off pitch stability were **checked in the sim** with the old Rotax 912 ULS; the switch to the 915 iS (turbo, heavier nose) is **not yet flown** |
 | Cockpit display | The sim's own Garmin G3X Touch (Working Title, v2) with a Rotax 915 iS engine strip. **Not yet seen in the sim.** The package's simpler EFIS (checked in the sim with live data, and viewable in a browser) is kept as a fallback - see `panel.cfg` |
 | Sound | **None yet** - the aircraft is silent (see below) |
@@ -53,6 +53,30 @@ To export just the models (and optionally previews) without the SDK build:
 The export checks that the six control-surface animations, the `PROPELLER` /
 `PROPELLER_Blur` nodes and the `EFIS_Display` screen material are all still there, and
 fails if not. `--cockpit` also renders cockpit and close-up views into `previews\`.
+
+### Check for VR gaps
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b blender\A240.blend --python-exit-code 1 --python tools\blender\check_vr_gaps.py
+```
+
+In VR you lean into every corner of the cockpit, so cracks that a fixed camera never shows
+become obvious. The sim draws both models in the cockpit and does not draw the back faces
+of single-sided materials, so a crack shows whatever is behind it, often daylight. The
+check traces rays the way the sim draws, from about 370 head positions around both seats,
+and fails on any ray that sees through a seam. It also lists parts that float free of
+everything else, and cabin parts that poke out through the skin. It takes a few seconds;
+run it after editing the model.
+
+The generator keeps the model gap-free like this. Keep to the same rules when editing:
+
+- The cabin lining has a reveal at every window: a strip from the lining's edge out to the
+  skin. The bulkheads are a little larger than the lining, and the lining runs into them.
+- Cabin parts that meet the walls (floor, panel backing, glareshield, baggage shelf) end
+  1.5 mm past the lining (`wall_x()`), measured on the mesh's polygon. Near the belly the
+  polygon lies several mm inside the smooth curve.
+- Fittings are set a millimetre or two into whatever they are mounted on, never just
+  short of it.
 
 Things the sim depends on - keep these names when editing:
 
@@ -155,6 +179,8 @@ move something in the model (wheels, wing, tail, lights), update the matching nu
 `flight_model.cfg` / `systems.cfg`.
 
 ## Known gaps
+
+The planned fixes, in order, are in [NEXT_STEPS.md](NEXT_STEPS.md).
 
 - **No sound.** MSFS 2024 does not support borrowing another aircraft's sounds in a
   native aircraft. The A240 needs its own sound package, which means Audiokinetic Wwise
