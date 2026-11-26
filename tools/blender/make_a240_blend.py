@@ -1100,11 +1100,30 @@ def gauge(mb, cx, cy, r, arcs=(), ticks=12, needle_deg=40, mat_face="gauge_face"
     mb.disc(c + V(0, 0, -0.0045), (0, 0, 1), r * 0.10, 0.0032, n=12, mat="black")    # hub, on the dial
 
 
-def toggle(mb, x, y, angle=20, z=PANEL_Z):
+# The panel's switches, buttons and key: build_panel() puts their fixed parts (bushings,
+# bezels) in the cabin mesh and lists their moving parts here; build_panel_controls() turns
+# each into its own node, keyed 0..100. Node and animation share a name.
+PANEL_PARTS = []
+TOGGLE_THROW = 40.0       # lever travel from OFF (20 deg down) to ON (20 deg up), deg
+
+
+def panel_part(name, mb, pivot, kind, axis, keys):
+    """kind "rot": keys are (key, degrees) about Blender axis `axis`; "slide": (key, metres)."""
+    PANEL_PARTS.append(dict(name=name, mb=mb, pivot=V(pivot), kind=kind, axis=axis, keys=keys))
+
+
+def toggle(mb, x, y, angle=20, z=PANEL_Z, name=None, length=0.018, ball=0.003):
+    """Toggle switch: hex bushing on the panel and a lever. With a name, the lever is a
+    moving part that pivots in the bushing: key 0 = OFF (down), 100 = ON (up)."""
     mb.disc((x, y, z - 0.002), (0, 0, 1), 0.007, 0.004, n=6, mat="chrome")
-    tip = V(x, y + 0.016 * math.sin(math.radians(angle)), z - 0.018 * math.cos(math.radians(angle)))
-    mb.tube(V(x, y, z - 0.003), tip, 0.0025, 0.0018, n=6, mat="chrome")
-    mb.ellipsoid(tip, 0.003, 0.003, 0.003, "chrome", nu=4, nv=6)
+    lever = MB() if name else mb
+    a = math.radians(angle)
+    tip = V(x, y + length * 0.89 * math.sin(a), z - length * math.cos(a))
+    lever.tube(V(x, y, z - 0.003), tip, 0.0025, 0.0018, n=6, mat="chrome")
+    lever.ellipsoid(tip, ball, ball, ball, "chrome", nu=4, nv=6)
+    if name:
+        # +X about Blender X lifts a lever that points at the pilot
+        panel_part(name, lever, (x, y, z - 0.003), "rot", 0, [(0, 0), (100, TOGGLE_THROW)])
 
 
 def knob(mb, x, y, r=0.011, depth=0.018, mat="black", z=PANEL_Z):
@@ -1112,10 +1131,10 @@ def knob(mb, x, y, r=0.011, depth=0.018, mat="black", z=PANEL_Z):
     mb.tube(V(x, y, z - depth * 0.4), V(x, y, z - depth), r, r * 0.9, n=14, mat=mat)
 
 
-def panel_switch(mb, x, d, label_w=20.0, label_dd=-9.5, off_dd=10.5):
-    """Toggle (shown OFF, lever down) with its name plate above and OFF plate below."""
+def panel_switch(mb, x, d, name, label_w=20.0, label_dd=-9.5, off_dd=10.5):
+    """Toggle (modelled OFF, lever down) with its name plate above and OFF plate below."""
     c = pp(x, d)
-    toggle(mb, c.x, c.y, angle=-20)
+    toggle(mb, c.x, c.y, angle=-20, name=name)
     plate(mb, x, d + label_dd, label_w, 5.0, lines=1)
     plate(mb, x, d + off_dd, 11.0, 4.5, lines=1)
 
@@ -1176,8 +1195,22 @@ def glareshield_section(zz):
     return ring
 
 
+ROW_SWITCHES = ("Light_Landing", "Light_Nav", "Light_Strobe", "COM", "TXP", "FLARM", "GDU460", "Spare", "USB")
+
+
+def build_panel_controls(col, parent):
+    """The panel's switches, buttons, guard and key as nodes, each keyed 0..100."""
+    for part in PANEL_PARTS:
+        obj = make_object(part["name"], part["mb"], col, parent, pivot=part["pivot"], smooth=40)
+        if part["kind"] == "rot":
+            animate(obj, part["axis"], part["keys"], part["name"])
+        else:
+            animate_slide(obj, part["axis"], part["keys"], part["name"])
+
+
 def build_panel(mb):
     z = PANEL_Z
+    PANEL_PARTS.clear()
     # black backing that closes the cabin cross-section behind and beside the panel; its
     # sides run just past the cabin lining, so there is no crack at the walls
     rings = []
@@ -1216,7 +1249,9 @@ def build_panel(mb):
     led(mb, -249.7, 44.8, "lens_green", r=0.0024)
     c = pp(-226.8, 45.4)
     mb.disc(c + V(0, 0, -0.002), (0, 0, 1), 0.012, 0.004, n=20, mat="chrome")
-    mb.disc(c + V(0, 0, -0.006), (0, 0, 1), 0.0078, 0.005, n=20, mat="metal")
+    button = MB()
+    button.disc(c + V(0, 0, -0.006), (0, 0, 1), 0.0078, 0.005, n=20, mat="metal")
+    panel_part("BUTTON_Start", button, c, "slide", 1, [(0, 0.0), (100, -0.003)])   # Blender -Y = into the panel
     c = pp(-126.0, 44.3)
     mb.rbox(c + V(0, 0, -0.011), (0.067, 0.036, 0.022), 0.005, "black")
     tube = [c + V(0.026 * (k / 6.0 - 1), 0.004 * (1 - (k / 6.0 - 1) ** 2) - 0.002, -0.0225) for k in range(13)]
@@ -1237,22 +1272,32 @@ def build_panel(mb):
     plate(mb, -403.3, 120.8, 14.0, 4.4, lines=1)
     c = pp(-403.3, 129.0)
     mb.disc(c + V(0, 0, -0.002), (0, 0, 1), 0.0055, 0.004, n=6, mat="chrome")
-    mb.disc(c + V(0, 0, -0.005), (0, 0, 1), 0.0035, 0.003, n=12, mat="knob_red")
+    button = MB()
+    button.disc(c + V(0, 0, -0.005), (0, 0, 1), 0.0035, 0.003, n=12, mat="knob_red")
+    panel_part("BUTTON_Test", button, c, "slide", 1, [(0, 0.0), (100, -0.002)])
     led(mb, -387.2, 129.0)
-    for row_d, lbl_d, off_d, (g0, g1), leds in ((180.3, 164.2, 195.6, (167.2, 197.3), True),
-                                                (221.3, 204.4, 236.6, (208.2, 238.3), False)):
-        for x in (-410.1, -387.2):
+    for row_d, lbl_d, off_d, (g0, g1), leds, what in ((180.3, 164.2, 195.6, (167.2, 197.3), True, "Lane"),
+                                                      (221.3, 204.4, 236.6, (208.2, 238.3), False, "Pump")):
+        for x, tag in ((-410.1, "A"), (-387.2, "B")):
             if leds:
                 led(mb, x + 0.6, 155.7)
             plate(mb, x, lbl_d, 16.0, 5.0, lines=1)
             c = pp(x, row_d)
-            toggle(mb, c.x, c.y, angle=-20)
+            toggle(mb, c.x, c.y, angle=-20, name="SWITCH_%s_%s" % (what, tag))
             plate(mb, x, off_d, 11.0, 4.5, lines=1)
         for gx in (-420.0, -398.1, -376.2):                    # switch guards
             mb.rbox(pp(gx, (g0 + g1) / 2, -0.010), (0.0042, (g1 - g0) / 1000, 0.020), 0.0019, "chrome")
     plate(mb, -435.0, 203.8, 15.0, 3.8, lines=1)
-    mb.rbox(pp(-435.0, 224.6, -0.006), (0.015, 0.038, 0.012), 0.0045, "knob_red")    # battery backup, guarded
-    mb.rbox(pp(-435.0, 224.6, -0.0122), (0.007, 0.026, 0.0008), 0.0, "label")
+    # battery backup: a short toggle under a red guard that flips up on a hinge near its top
+    # edge. The hinge block on the panel stays inside the guard whatever its angle, and the
+    # axis sits at mid-depth so the guard never swings into the panel.
+    c = pp(-435.0, 224.6)
+    toggle(mb, c.x, c.y, angle=-20, name="SWITCH_Battery_Backup", length=0.007, ball=0.002)
+    mb.rbox(pp(-435.0, 208.5, -0.004), (0.017, 0.005, 0.008), 0.001, "chrome")
+    guard = MB()
+    guard.rbox(pp(-435.0, 224.6, -0.006), (0.015, 0.038, 0.012), 0.0045, "knob_red")
+    guard.rbox(pp(-435.0, 224.6, -0.0122), (0.007, 0.026, 0.0008), 0.0, "label")
+    panel_part("SWITCH_Battery_Guard", guard, pp(-435.0, 208.5, -0.006), "rot", 0, [(0, 0), (100, 100)])
 
     # --- centre: COM radio, switch row, key switch, transponder
     mb.rbox(pp(17.2, 127.0, -0.004), (0.159, 0.0323, 0.008), 0.0015, "black")
@@ -1265,12 +1310,14 @@ def build_panel(mb):
     c = pp(85.4, 132.6)
     knob(mb, c.x, c.y, r=0.0085, depth=0.010, z=z - 0.008)
     knob(mb, c.x, c.y, r=0.0055, depth=0.017, z=z - 0.008)
-    for i in range(9):          # Land light, Pos light, Strobe, COM, TXP, FLARM, GDU 460, Free, USB
-        panel_switch(mb, -71.2 + i * 21.96, 160.0)
+    for i, name in enumerate(ROW_SWITCHES):
+        panel_switch(mb, -71.2 + i * 21.96, 160.0, "SWITCH_" + name)
     c = pp(-55.7, 200.0)
     mb.disc(c + V(0, 0, -0.002), (0, 0, 1), 0.0127, 0.004, n=20, mat="chrome")
-    mb.tube(c + V(0, 0, -0.004), c + V(0, 0, -0.011), 0.0085, n=16, mat="metal")
-    mb.rbox(c + V(0, 0, -0.0115), (0.0016, 0.0085, 0.002), 0.0, "black")
+    key = MB()                  # engine / avionics key: lock barrel and key slot turn together
+    key.tube(c + V(0, 0, -0.0035), c + V(0, 0, -0.011), 0.0085, n=16, mat="metal")
+    key.rbox(c + V(0, 0, -0.0115), (0.0016, 0.0085, 0.002), 0.0, "black")
+    panel_part("KEY_Avionics", key, c, "rot", 1, [(0, 0), (100, -90)])   # -Y about Blender Y = clockwise
     plate(mb, -73.0, 195.9, 23.7, 17.3, lines=3)
     # transponder control head (Trig TT21 style)
     tx, td = 62.65, 200.0
@@ -1724,6 +1771,7 @@ def main():
     liner = build_liner(inn, iroot)
     build_cabin_interior(inn, iroot)
     build_moving_controls(inn, iroot)
+    build_panel_controls(inn, iroot)
     build_screen(inn, iroot)
 
     setup_export_presets(scene, ext, inn)

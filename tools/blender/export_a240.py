@@ -41,6 +41,12 @@ for _seat in ("Pilot", "Copilot"):
             "HANDLING_Pedal_%s_%s" % (_side, _seat)
         EXPECTED_INTERIOR_ANIMS["toe_brake_%s_%s" % (_side.lower(), _seat.lower())] = \
             "HANDLING_ToeBrake_%s_%s" % (_side, _seat)
+# panel switches, buttons, guard and key: node and animation share a name
+for _name in ("SWITCH_Lane_A", "SWITCH_Lane_B", "SWITCH_Pump_A", "SWITCH_Pump_B", "SWITCH_Battery_Backup",
+              "SWITCH_Battery_Guard", "SWITCH_Light_Landing", "SWITCH_Light_Nav", "SWITCH_Light_Strobe",
+              "SWITCH_COM", "SWITCH_TXP", "SWITCH_FLARM", "SWITCH_GDU460", "SWITCH_Spare", "SWITCH_USB",
+              "BUTTON_Start", "BUTTON_Test", "KEY_Avionics"):
+    EXPECTED_INTERIOR_ANIMS[_name] = _name
 REQUIRED_NODES = ["PROPELLER", "PROPELLER_Blur", "EFIS_Screen"]
 
 
