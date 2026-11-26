@@ -1,6 +1,6 @@
 """Check the model for the gaps you would notice in VR.
 
-    blender -b blender/A240.blend --python-exit-code 1 --python tools/blender/check_vr_gaps.py [-- --rays N]
+    blender -b blender/A240.blend --python-exit-code 1 --python tools/blender/check_vr_gaps.py [-- --rays N] [--frames 0,50,100]
 
 In VR you lean into every corner of the cockpit, so seams a fixed 2D camera never shows
 become obvious. The sim draws both models in the cockpit (model.cfg
@@ -15,6 +15,8 @@ crack between two parts shows whatever lies behind - often daylight. Three check
 3. Poke-through: cabin parts that stick out through the painted skin (window reveals
    may, inside the rubber seals).
 
+All three run with the animations at keys 0, 50 and 100 - controls at both ends of their
+travel and centred - so a moving part cannot open a gap at full deflection either.
 Exits with code 1 if anything is found.
 """
 import math
@@ -32,6 +34,7 @@ from a240_lib import MATERIALS  # noqa: E402
 
 ARGS = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 NRAYS = int(ARGS[ARGS.index("--rays") + 1]) if "--rays" in ARGS else 2000
+FRAMES = [int(f) for f in ARGS[ARGS.index("--frames") + 1].split(",")] if "--frames" in ARGS else [0, 50, 100]
 TRANSPARENT = {"glass", "glass_tint", "blur"}
 DOUBLE_SIDED = {k for k, v in MATERIALS.items() if v["extra"].get("msfs_double_sided")}
 SKIP = {"PROPELLER_Blur"}                # only shown while the propeller turns
@@ -46,9 +49,9 @@ def S(p):
     return tuple(round(c, 3) for c in (-p[0], p[2], -p[1]))
 
 
-def load():
-    """All triangles in world space, with their object, material, island and normal."""
-    bpy.context.scene.frame_set(50)                    # control surfaces neutral
+def load(frame):
+    """All triangles in world space at an animation key, with object, material, island, normal."""
+    bpy.context.scene.frame_set(frame)
     dg = bpy.context.evaluated_depsgraph_get()
     m = dict(verts=[], tris=[], obj=[], mat=[], isl=[], nrm=[], islands=[])
     for o in bpy.data.objects:
@@ -210,9 +213,12 @@ def poke_through(m):
 
 
 def main():
-    m = load()
-    print("%d triangles; double-sided materials: %s" % (len(m["tris"]), ", ".join(sorted(DOUBLE_SIDED))))
-    problems = see_through(m) + floating(m) + poke_through(m)
+    problems = 0
+    for frame in FRAMES:
+        m = load(frame)
+        print("== animation key %d: %d triangles; double-sided materials: %s"
+              % (frame, len(m["tris"]), ", ".join(sorted(DOUBLE_SIDED))))
+        problems += see_through(m) + floating(m) + poke_through(m)
     if problems:
         raise SystemExit("VR gap check failed")
     print("VR gap check passed")

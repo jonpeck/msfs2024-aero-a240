@@ -1,0 +1,139 @@
+<ModelBehaviors>
+	<!-- Moves the cockpit controls in A240_interior.gltf with the sim. The nodes and their
+	     0..100 keys are built by build_moving_controls() in tools/blender/make_a240_blend.py.
+	     Each ANIM_CODE gives the key: 50 is neutral for the stick, pedals and trim; 0 is idle,
+	     flaps up and brakes off. Animation only: nothing here is clickable yet.
+
+	     The directions marked "check" are assumptions about the sign of a SimVar that the SDK
+	     docs do not state. If one of those controls moves the wrong way in the sim, change the
+	     "+" just before "0 max" in its ANIM_CODE to "-" (for both seats). -->
+	<Include ModelBehaviorFile="ASOBO_EX1\\Index.xml"/>
+	<Include ModelBehaviorFile="ASOBO_EX1\\DefaultConfig.xml"/>
+	<Include ModelBehaviorFile="ASOBO_EX1\\InteriorDefs.xml"/>
+
+	<Component ID="CONFIG">
+		<Parameters Type="Override">
+			<UseParametersFn Name="ASOBO_Configure_Global_Parameters"/>
+		</Parameters>
+	</Component>
+
+	<!-- Sticks. Roll check: key 100 = full right, assuming YOKE X POSITION > 0 is right.
+	     Pitch check: key 100 = full aft, assuming YOKE Y POSITION > 0 is pulled back. -->
+	<Component ID="STICK_ROLL_PILOT" Node="HANDLING_Stick_Roll_Pilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>stick_roll_pilot</ANIM_NAME>
+			<ANIM_CODE>50 (A:YOKE X POSITION, percent) 2 / + 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+	<Component ID="STICK_PITCH_PILOT" Node="HANDLING_Stick_Pitch_Pilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>stick_pitch_pilot</ANIM_NAME>
+			<ANIM_CODE>50 (A:YOKE Y POSITION, percent) 2 / + 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+	<Component ID="STICK_ROLL_COPILOT" Node="HANDLING_Stick_Roll_Copilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>stick_roll_copilot</ANIM_NAME>
+			<ANIM_CODE>50 (A:YOKE X POSITION, percent) 2 / + 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+	<Component ID="STICK_PITCH_COPILOT" Node="HANDLING_Stick_Pitch_Copilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>stick_pitch_copilot</ANIM_NAME>
+			<ANIM_CODE>50 (A:YOKE Y POSITION, percent) 2 / + 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+
+	<!-- Rudder pedals: key 100 = right pedal pushed in, left pedal back. The SDK docs give
+	     RUDDER PEDAL POSITION -16K for the left pedal pushed full in, so this sign is
+	     documented. Toe brakes: BRAKE LEFT / RIGHT POSITION, 0 (off) to 100 (full). -->
+	<Component ID="PEDAL_L_PILOT" Node="HANDLING_Pedal_L_Pilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>rudder_pedal_l_pilot</ANIM_NAME>
+			<ANIM_CODE>50 (A:RUDDER PEDAL POSITION, percent) 2 / + 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+	<Component ID="PEDAL_R_PILOT" Node="HANDLING_Pedal_R_Pilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>rudder_pedal_r_pilot</ANIM_NAME>
+			<ANIM_CODE>50 (A:RUDDER PEDAL POSITION, percent) 2 / + 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+	<Component ID="PEDAL_L_COPILOT" Node="HANDLING_Pedal_L_Copilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>rudder_pedal_l_copilot</ANIM_NAME>
+			<ANIM_CODE>50 (A:RUDDER PEDAL POSITION, percent) 2 / + 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+	<Component ID="PEDAL_R_COPILOT" Node="HANDLING_Pedal_R_Copilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>rudder_pedal_r_copilot</ANIM_NAME>
+			<ANIM_CODE>50 (A:RUDDER PEDAL POSITION, percent) 2 / + 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+	<Component ID="TOE_BRAKE_L_PILOT" Node="HANDLING_ToeBrake_L_Pilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>toe_brake_l_pilot</ANIM_NAME>
+			<ANIM_CODE>(A:BRAKE LEFT POSITION, percent) 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+	<Component ID="TOE_BRAKE_R_PILOT" Node="HANDLING_ToeBrake_R_Pilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>toe_brake_r_pilot</ANIM_NAME>
+			<ANIM_CODE>(A:BRAKE RIGHT POSITION, percent) 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+	<Component ID="TOE_BRAKE_L_COPILOT" Node="HANDLING_ToeBrake_L_Copilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>toe_brake_l_copilot</ANIM_NAME>
+			<ANIM_CODE>(A:BRAKE LEFT POSITION, percent) 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+	<Component ID="TOE_BRAKE_R_COPILOT" Node="HANDLING_ToeBrake_R_Copilot">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>toe_brake_r_copilot</ANIM_NAME>
+			<ANIM_CODE>(A:BRAKE RIGHT POSITION, percent) 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+
+	<!-- Vernier throttle: key 0 = idle (knob pulled out), 100 = full power (pushed in). -->
+	<Component ID="THROTTLE_KNOB" Node="THROTTLE_Knob">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>throttle_knob</ANIM_NAME>
+			<ANIM_CODE>(A:GENERAL ENG THROTTLE LEVER POSITION:1, percent) 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+
+	<!-- Flap lever: key 0 = flaps up (lever forward and down), 100 = full flaps (raised).
+	     The quadrant's three notches match flaps-position.0..2 in flight_model.cfg. -->
+	<Component ID="FLAP_LEVER" Node="HANDLING_Flap_Lever">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>flap_lever</ANIM_NAME>
+			<ANIM_CODE>(A:FLAPS HANDLE PERCENT, percent) 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+
+	<!-- Elevator trim lever. Check: key 100 = full nose-up trim (lever aft), assuming
+	     ELEVATOR TRIM POSITION > 0 is nose up. 15 is elevator_trim_limit in flight_model.cfg. -->
+	<Component ID="ELEVATOR_TRIM_LEVER" Node="HANDLING_Trim_Lever">
+		<UseTemplate Name="ASOBO_GT_Anim_Code_Template">
+			<ANIM_NAME>elevator_trim_lever</ANIM_NAME>
+			<ANIM_CODE>50 (A:ELEVATOR TRIM POSITION, degrees) 15 / 50 * + 0 max 100 min</ANIM_CODE>
+			<ANIM_LENGTH>100</ANIM_LENGTH>
+		</UseTemplate>
+	</Component>
+</ModelBehaviors>

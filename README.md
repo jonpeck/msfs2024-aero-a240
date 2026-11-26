@@ -50,9 +50,9 @@ To export just the models (and optionally previews) without the SDK build:
 "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b blender\A240.blend --python-exit-code 1 --python tools\blender\export_a240.py -- --previews --cockpit
 ```
 
-The export checks that the six control-surface animations, the `PROPELLER` /
-`PROPELLER_Blur` nodes and the `EFIS_Display` screen material are all still there, and
-fails if not. `--cockpit` also renders cockpit and close-up views into `previews\`.
+The export checks that the six control-surface animations, the 15 cockpit-control
+animations, the `PROPELLER` / `PROPELLER_Blur` nodes and the `EFIS_Display` screen material
+are all still there, and fails if not. `--cockpit` also renders cockpit and close-up views into `previews\`.
 
 ### Check for VR gaps
 
@@ -65,8 +65,9 @@ become obvious. The sim draws both models in the cockpit and does not draw the b
 of single-sided materials, so a crack shows whatever is behind it, often daylight. The
 check traces rays the way the sim draws, from about 370 head positions around both seats,
 and fails on any ray that sees through a seam. It also lists parts that float free of
-everything else, and cabin parts that poke out through the skin. It takes a few seconds;
-run it after editing the model.
+everything else, and cabin parts that poke out through the skin. It runs with the moving
+controls centred and at both ends of their travel, takes about 15 seconds, and is worth
+running after any edit to the model.
 
 The generator keeps the model gap-free like this. Keep to the same rules when editing:
 
@@ -88,6 +89,11 @@ Things the sim depends on - keep these names when editing:
   spinner stays outside these, or it would vanish with the blades at high RPM.
 - `EFIS_Screen` with material `EFIS_Display` (the G3X Touch is painted onto it, using its
   UVs). It is the GDU 460's 5:3 screen, 230.9 x 138.5 mm, to match the 1280 x 768 display.
+- The cockpit controls, each with its origin on its pivot and its action named as in
+  `model/A240_Interior_Behavior.xml`, which moves them with the sim:
+  - `HANDLING_Stick_Roll_Pilot/Copilot` (empties) with `HANDLING_Stick_Pitch_*` under them
+  - `HANDLING_Pedal_L/R_*` with `HANDLING_ToeBrake_L/R_*` under them
+  - `THROTTLE_Knob` (slides), `HANDLING_Flap_Lever` and `HANDLING_Trim_Lever`
 
 `tools\blender\make_a240_blend.py` is the script that built the .blend from scratch. Once
 you have edited the .blend by hand, do not re-run it - it overwrites the file.
@@ -167,7 +173,8 @@ and the 6.25 in Garmin COM, which agree at 1.83 px/mm. The panel is 0.91 m wide 
 0.28 m tall. In `build_panel()` every item is placed with `pp(x, d)`: mm right of the
 centreline (as the pilot sees it) and mm down from the top centre of the panel, read
 straight off that image. Switches, labels and placards are shapes only: there is no text,
-the needles do not move and nothing is clickable yet.
+the needles do not move and nothing is clickable yet. The sticks, rudder pedals and toe
+brakes, throttle knob, flap lever and trim lever move with the sim's controls.
 
 ## Coordinates
 
@@ -186,7 +193,8 @@ The planned fixes, in order, are in [NEXT_STEPS.md](NEXT_STEPS.md).
   native aircraft. The A240 needs its own sound package, which means Audiokinetic Wwise
   and the SDK's sample Wwise project.
 - **No textures.** Every surface is a flat colour.
-- **Nothing in the cockpit is clickable**, and the standby gauges' needles are fixed. Use
+- **Nothing in the cockpit is clickable**, and the standby gauges' needles are fixed (the
+  sticks, pedals, throttle, flap and trim levers do move with the sim). Use
   keyboard or controller bindings (start the engine with Ctrl+E, or begin the flight on the
   runway).
 - **Electrical system uses the simple MSFS 2020-style description** (`[ELECTRICAL]`

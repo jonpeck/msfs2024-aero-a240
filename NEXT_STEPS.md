@@ -6,7 +6,7 @@ because the newest changes have not been in the sim yet.
 | # | Item | Value | Effort | Can be checked without the sim |
 | --- | --- | --- | --- | --- |
 | 0 | Verify the G3X panel and Rotax 915 iS | Required | Small | No |
-| 1 | Moving controls | High | Small | Pivots and travel, in renders |
+| 1 | Moving controls | High | Small | Done; directions to confirm in the sim (step 0) |
 | 2 | Live standby gauges | High | Small-medium | Needle pivots, in renders |
 | 3 | Clickable switches | High | Medium | No |
 | 4 | Text on labels and placards | Medium | Small-medium | Yes, in renders |
@@ -46,18 +46,17 @@ then:
 
 ### 1. Moving controls
 
-Today the sticks, rudder pedals, throttle knob and flap lever are fixed parts of the
-single `Cabin` mesh.
+**Done, not yet seen in the sim.** `build_moving_controls()` in `make_a240_blend.py`
+makes each control its own node on its real pivot, keyed 0-100:
 
-- Split each into its own node with its origin on the real pivot:
-  - stick base, for pitch and roll
-  - pedal hinge, for rudder and toe brakes
-  - throttle shaft axis: the knob slides in and out ("idle PULL")
-  - flap lever pivot, plus the elevator trim lever beside it
-- Key each 0-100, the same way the exterior control surfaces are keyed in
-  `make_a240_blend.py`.
-- Link the keys to the sim in an interior behaviour file. Today `interior.xml` loads only
-  the model.
+- stick: roll and pitch about its base, both seats
+- rudder pedals about their floor hinge, toe brakes tilting the pedal faces
+- throttle knob sliding out 5 cm to idle ("idle PULL")
+- flap lever over a three-notch quadrant, and the elevator trim lever beside it
+
+`model/A240_Interior_Behavior.xml` drives the keys from the sim. The directions of the stick
+and trim rest on SimVar signs the SDK docs don't state: confirm them with the "Moving
+controls" checks in `VERIFY_ON_WINDOWS.md`.
 
 Done when the cockpit controls follow the sim's controls, with the right direction and
 travel.

@@ -6,6 +6,8 @@ Checklist for the first build and flight after two changes:
 - the engine switched to the Rotax 915 iS
 - the seams closed for VR: window reveals, bulkheads, floor, panel backing and glareshield
   to the walls, the wing-root fairing, and parts that floated or poked through
+- moving cockpit controls: sticks, rudder pedals and toe brakes, throttle knob, flap lever
+  and trim lever
 
 These changes were written and test-rendered on Linux, without the MSFS SDK and without
 the sim. Nothing below has been checked yet. Run the steps in order, and note anything
@@ -27,8 +29,8 @@ This overwrites `blender\A240.blend`. It loads the SDK's exporter from
 `C:\MSFS 2024 SDK\Tools\Blender`. If the SDK is installed somewhere else, set
 `$env:MSFS2024_SDK` first.
 
-- [ ] It ends with `saved ...\A240.blend: 28 objects, ~99000 triangles`. The Linux test
-      build gave 99,166 triangles.
+- [ ] It ends with `saved ...\A240.blend: 43 objects, ~99000 triangles`. The Linux test
+      build gave 99,058 triangles.
 - [ ] The VR gap check passes on the new .blend:
 
       ```
@@ -43,8 +45,9 @@ This overwrites `blender\A240.blend`. It loads the SDK's exporter from
 "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b blender\A240.blend --python-exit-code 1 --python tools\blender\export_a240.py -- --previews --cockpit
 ```
 
-- [ ] No errors. The export checks that the six control-surface animations, the
-      `PROPELLER` / `PROPELLER_Blur` nodes and the `EFIS_Screen` screen are present.
+- [ ] No errors. The export checks that the six control-surface animations, the 15
+      cockpit-control animations, the `PROPELLER` / `PROPELLER_Blur` nodes and the
+      `EFIS_Screen` screen are present.
 - [ ] `previews\cockpit_panel.png` and `previews\cockpit_pilot_view.png` show the new panel.
       Compare them with the factory image, `panel-garmin-1a.jpg` on
       <https://www.aeropro.sk/eurofox/>. Its layout, left to right:
@@ -92,6 +95,26 @@ Load the A240 on a runway, then once more cold and dark.
       - under the panel into the footwell, and up behind the panel
       - over the glareshield, where it meets the windshield
       - from outside: the wing root, the belly and the door windows
+
+### Moving controls
+
+`model\A240_Interior_Behavior.xml` moves them. Three of the directions rest on SimVar signs
+that the SDK docs don't state; they are marked "check" in that file. If one moves the wrong
+way, change the `+` just before `0 max` in its `ANIM_CODE` to `-` (both seats), then
+rebuild with `-SkipModel`.
+
+- [ ] Stick, roll (check): stick right goes right, for both seats.
+- [ ] Stick, pitch (check): pulling back brings the stick aft.
+- [ ] Rudder: right rudder pushes the right pedals forward and brings the left ones back.
+- [ ] Toe brakes: left and right brakes tilt the top of their own pedal forward.
+- [ ] Throttle: the knob is pulled out about 5 cm at idle and pushed in at full power.
+- [ ] Flaps: the red lever rises through the three notches as the flaps go 0, 10, 20.
+- [ ] Trim (check): nose-up trim moves the small black lever beside the flap lever aft.
+- [ ] At full travel nothing passes through anything else, and in VR no gap opens where a
+      control meets its mount (stick boot, pedal hinge, throttle nut, console).
+- [ ] If nothing moves at all, look for behaviour errors in the build output or the
+      developer-mode Behaviors window. The file uses `ASOBO_GT_Anim_Code_Template` from
+      `ASOBO_EX1\InteriorDefs.xml`.
 
 ## 5. Cockpit: the G3X Touch
 
@@ -203,6 +226,7 @@ empty CG moved forward from 0.25 to 0.57 ft.
 - Screenshots: the panel from the pilot's seat, and the G3X with the engine running.
 - Any seam where daylight or background shows in VR, with a screenshot and where you
   were looking from.
+- Which cockpit controls moved the wrong way, or not at all.
 - The engine numbers: idle RPM; static RPM, manifold pressure, power and fuel flow; full
   throttle and 5500 RPM in level flight (RPM, power, speed); manifold pressure at 10,000,
   15,000 and 17,000 ft.

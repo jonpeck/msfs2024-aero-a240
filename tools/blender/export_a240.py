@@ -30,6 +30,17 @@ EXPECTED_ANIMS = {
     "l_aileron_percent_key": "SKEL_Aileron_L", "r_aileron_percent_key": "SKEL_Aileron_R",
     "l_flap_percent_key": "SKEL_Flap_L", "r_flap_percent_key": "SKEL_Flap_R",
 }
+# cockpit controls, driven by model/A240_Interior_Behavior.xml
+EXPECTED_INTERIOR_ANIMS = {"throttle_knob": "THROTTLE_Knob", "flap_lever": "HANDLING_Flap_Lever",
+                           "elevator_trim_lever": "HANDLING_Trim_Lever"}
+for _seat in ("Pilot", "Copilot"):
+    EXPECTED_INTERIOR_ANIMS["stick_roll_" + _seat.lower()] = "HANDLING_Stick_Roll_" + _seat
+    EXPECTED_INTERIOR_ANIMS["stick_pitch_" + _seat.lower()] = "HANDLING_Stick_Pitch_" + _seat
+    for _side in ("L", "R"):
+        EXPECTED_INTERIOR_ANIMS["rudder_pedal_%s_%s" % (_side.lower(), _seat.lower())] = \
+            "HANDLING_Pedal_%s_%s" % (_side, _seat)
+        EXPECTED_INTERIOR_ANIMS["toe_brake_%s_%s" % (_side.lower(), _seat.lower())] = \
+            "HANDLING_ToeBrake_%s_%s" % (_side, _seat)
 REQUIRED_NODES = ["PROPELLER", "PROPELLER_Blur", "EFIS_Screen"]
 
 
@@ -48,14 +59,16 @@ def export():
     result = bpy.ops.msfs2024.multi_export_gltf(export_mode="PRESETS")
     if "FINISHED" not in result:
         raise RuntimeError("export failed: %s" % result)
-    neutral_rest_pose(os.path.join(MODEL_DIR, "A240.gltf"))
+    for name in ("A240", "A240_interior"):
+        neutral_rest_pose(os.path.join(MODEL_DIR, name + ".gltf"))
     check_outputs()
 
 
 def neutral_rest_pose(path):
     """The exporter stores each node's pose at the current frame as its rest transform, which
     for frame 0 means full control deflection. Clear the rotation of animated nodes so the
-    rest pose is neutral, as before; the sim drives these nodes from the animations."""
+    rest pose is neutral, as before (every animated node is built in its neutral pose: flaps
+    and brakes off, controls centred); the sim drives these nodes from the animations."""
     with open(path, encoding="utf-8") as f:
         doc = json.load(f)
     targets = {c["target"]["node"] for a in doc.get("animations", []) for c in a["channels"]
@@ -89,14 +102,14 @@ def check_outputs():
         for a in doc.get("animations", []):
             targets = {doc["nodes"][c["target"]["node"]]["name"] for c in a["channels"]}
             anims.setdefault(a["name"], set()).update(targets)
-        if name == "A240":
-            for anim, node in EXPECTED_ANIMS.items():
-                if anims.get(anim) != {node}:
-                    problems.append("%s: animation %s targets %s, expected %s"
-                                    % (name, anim, sorted(anims.get(anim, [])), node))
-            extra = set(anims) - set(EXPECTED_ANIMS)
-            if extra:
-                problems.append("%s: unexpected animations %s" % (name, sorted(extra)))
+        expected = EXPECTED_ANIMS if name == "A240" else EXPECTED_INTERIOR_ANIMS
+        for anim, node in expected.items():
+            if anims.get(anim) != {node}:
+                problems.append("%s: animation %s targets %s, expected %s"
+                                % (name, anim, sorted(anims.get(anim, [])), node))
+        extra = set(anims) - set(expected)
+        if extra:
+            problems.append("%s: unexpected animations %s" % (name, sorted(extra)))
         print("%s.gltf: %d nodes, %d materials, %d triangles, %d animations"
               % (name, len(nodes), len(doc.get("materials", [])), tris, len(anims)))
     for n in REQUIRED_NODES:

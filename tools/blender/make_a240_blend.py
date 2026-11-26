@@ -1318,14 +1318,9 @@ def build_panel(mb):
                         (-77.0, 282.0)], 8.0)
     flat_poly(mb, tab, z - 0.005, z + 0.001, "panel_grey")
     tz = z - 0.005
-    c = pp(12.6, 252.0)
+    c = throttle_axis()
     mb.disc(V(c.x, c.y, tz - 0.005), (0, 0, 1), 0.0285, 0.010, n=8, mat="black")          # friction lock nut
-    mb.tube(V(c.x, c.y, tz - 0.010), V(c.x, c.y, tz - 0.040), 0.005, n=12, mat="chrome")
-    mb.tube(V(c.x, c.y, tz - 0.040), V(c.x, c.y, tz - 0.066), 0.019, 0.0185, n=24, mat="black")
-    mb.sweep([V(c.x + 0.0195 * math.cos(a), c.y + 0.0195 * math.sin(a), tz - 0.053) for a in
-              [2 * math.pi * j / 24 for j in range(24)]], radius=0.002, n=5, mat="black", closed=True)
-    mb.tube(V(c.x, c.y, tz - 0.066), V(c.x, c.y, tz - 0.071), 0.010, 0.009, n=16, mat="button")
-    plate(mb, -36.1, 239.9, 37.0, 9.0, lines=2, dz=-0.005)
+    plate(mb, -36.1, 239.9, 37.0, 9.0, lines=2, dz=-0.005)          # the knob: build_throttle_knob()
     c = pp(70.0, 290.0)
     knob(mb, c.x, c.y, r=0.009, depth=0.020, z=tz)                                     # cabin heat
     plate(mb, 69.4, 272.2, 29.0, 8.0, lines=2, dz=-0.005)
@@ -1388,12 +1383,47 @@ def build_seat(mb, cx):
     mb.rbox(V(cx, -0.445, -0.49), (0.30, 0.10, 0.05), 0.008, "seat")
 
 
-def build_controls(mb, cx):
-    # stick with rubber boot, grip, PTT and trim hat
+# ============================================================================
+# moving cockpit controls
+# ============================================================================
+# Each control is its own node with its origin on its real pivot, keyed 0..100 like the
+# control surfaces. model/A240_Interior_Behavior.xml drives the keys from the sim:
+# 50 is neutral for the stick, pedals and trim; 0 is idle, flaps up and brakes off.
+# Every moving part stays inside what it is mounted on over its whole travel (the stick
+# in its boot, the throttle shaft in its nut, the levers in the console), so no gap opens.
+STICK_PITCH = (12.0, -16.0)   # stick angle at keys 0 (full forward) and 100 (full aft), deg
+STICK_ROLL = 14.0             # either way, deg
+PEDAL_TRAVEL = 18.0           # each pedal about its floor hinge, deg
+TOE_BRAKE = 12.0              # pedal face tilt at full brake, deg
+THROTTLE_PULL = 0.05          # knob pulled out this far at idle ("idle PULL"), m
+FLAP_PIVOT = V(0.0, -0.43, -0.27)
+FLAP_LEVER_UP = 30.0          # lever elevation with flaps up, deg (it leans forward)
+FLAP_LEVER_TRAVEL = 45.0      # raised this far for full flaps, deg
+TRIM_TRAVEL = 20.0            # trim lever either way, deg
+SEATS = (("Pilot", -0.26), ("Copilot", 0.26))
+
+
+def throttle_axis():
+    """Where the throttle shaft meets the console plate (sim frame)."""
+    c = pp(12.6, 252.0)
+    return V(c.x, c.y, PANEL_Z - 0.005)
+
+
+def build_control_mounts(mb, cx):
+    """The fixed parts the moving controls sit in: a low rubber boot round the stick (its
+    top is wide enough that the stick always comes out through it) and the pedal cross
+    tube on the floor."""
+    base = V(cx, -0.485, 0.14)
+    mb.tube(base - V(0, 0.002, 0), base + V(0, 0.04, 0), 0.05, 0.03, n=16, mat="rubber")
+    mb.tube(V(cx - 0.12, -0.475, 0.70), V(cx + 0.12, -0.475, 0.70), 0.009, n=8, mat="metal")
+
+
+def build_stick(col, parent, seat, cx):
+    """Control stick pivoting at the floor: an outer node rolls, the inner one pitches."""
+    mb = MB()
     base = V(cx, -0.485, 0.14)
     top = V(cx, -0.21, 0.185)
     mb.tube(base, top, 0.011, n=10, mat="metal")
-    mb.tube(base, base + V(0, 0.07, 0.008), 0.05, 0.016, n=16, mat="rubber")
     grip0, grip1 = top, top + V(0, 0.115, 0.012)
     mb.tube(grip0, grip1, 0.017, 0.019, n=16, mat="black")
     for i in range(1, 4):
@@ -1403,18 +1433,77 @@ def build_controls(mb, cx):
     mb.ellipsoid(grip1 + V(0, 0.004, 0), 0.02, 0.012, 0.02, "black", nu=6, nv=14)
     mb.ellipsoid(grip1 + V(0, 0.012, 0.004), 0.005, 0.004, 0.005, "knob_red", nu=4, nv=8)
     mb.rbox(grip1 + V(0, -0.01, -0.016), (0.012, 0.012, 0.008), 0.002, "black")
-    # rudder pedals with toe-brake plates
-    for dx in (-0.085, 0.085):
+    roll = make_empty("HANDLING_Stick_Roll_%s" % seat, col, parent, base, size=0.05)
+    pitch = make_object("HANDLING_Stick_Pitch_%s" % seat, mb, col, roll, pivot=base, smooth=40)
+    # Blender X = sim -x and Blender Y = sim -z: +X tips the stick forward, +Y to the left
+    fwd, aft = STICK_PITCH
+    animate(roll, 1, [(0, STICK_ROLL), (50, 0), (100, -STICK_ROLL)], "stick_roll_%s" % seat.lower())
+    animate(pitch, 0, [(0, fwd), (50, 0), (100, aft)], "stick_pitch_%s" % seat.lower())
+
+
+def build_pedals(col, parent, seat, cx):
+    """Rudder pedals hinged at the floor; each pedal face tilts on its arm for the toe brake."""
+    for tag, dx in (("L", -0.085), ("R", 0.085)):
         x = cx + dx
         piv = V(x, -0.475, 0.70)
-        plate = V(x, -0.38, 0.725)
-        mb.tube(piv, plate, 0.008, n=8, mat="metal")
-        pedal, tilt = plate + V(0, 0.01, -0.004), rot_x(-20)
-        mb.rbox(pedal, (0.065, 0.11, 0.014), 0.006, "black", rot=tilt)
+        top = V(x, -0.38, 0.725)
+        arm = MB()
+        arm.tube(piv, top, 0.008, n=8, mat="metal")
+        face = MB()
+        pedal, tilt = top + V(0, 0.01, -0.004), rot_x(-20)
+        face.rbox(pedal, (0.065, 0.11, 0.014), 0.006, "black", rot=tilt)
         for k in range(4):            # grip ribs, set into the pedal's face
-            mb.rbox(pedal + tilt @ V(0, -0.045 + k * 0.024, -0.0085), (0.06, 0.004, 0.004), 0.0012, "metal",
-                    rot=tilt)
-    mb.tube(V(cx - 0.12, -0.475, 0.70), V(cx + 0.12, -0.475, 0.70), 0.009, n=8, mat="metal")
+            face.rbox(pedal + tilt @ V(0, -0.045 + k * 0.024, -0.0085), (0.06, 0.004, 0.004), 0.0012, "metal",
+                      rot=tilt)
+        a = make_object("HANDLING_Pedal_%s_%s" % (tag, seat), arm, col, parent, pivot=piv, smooth=40)
+        f = make_object("HANDLING_ToeBrake_%s_%s" % (tag, seat), face, col, a, pivot=top, smooth=40)
+        # +X tips the top forward. Key 100 = right pedal pushed in, so the left one comes back.
+        k = PEDAL_TRAVEL if tag == "R" else -PEDAL_TRAVEL
+        animate(a, 0, [(0, -k), (50, 0), (100, k)], "rudder_pedal_%s_%s" % (tag.lower(), seat.lower()))
+        animate(f, 0, [(0, 0), (100, TOE_BRAKE)], "toe_brake_%s_%s" % (tag.lower(), seat.lower()))
+
+
+def build_throttle_knob(col, parent):
+    """Vernier push-pull throttle, modelled pushed fully in (full power). Its shaft runs back
+    into the panel backing, and is still inside the friction-lock nut when pulled to idle."""
+    c = throttle_axis()
+    mb = MB()
+
+    def at(dz):
+        return V(c.x, c.y, c.z + dz)
+    mb.tube(at(0.044), at(-0.014), 0.005, n=12, mat="chrome")
+    mb.tube(at(-0.014), at(-0.040), 0.019, 0.0185, n=24, mat="black")
+    mb.sweep([V(c.x + 0.0195 * math.cos(a), c.y + 0.0195 * math.sin(a), c.z - 0.027) for a in
+              [2 * math.pi * j / 24 for j in range(24)]], radius=0.002, n=5, mat="black", closed=True)
+    mb.tube(at(-0.040), at(-0.045), 0.010, 0.009, n=16, mat="button")
+    obj = make_object("THROTTLE_Knob", mb, col, parent, pivot=c, smooth=40)
+    animate_slide(obj, 1, [(0, THROTTLE_PULL), (100, 0.0)], "throttle_knob")   # Blender +Y = towards the pilot
+
+
+def build_console_levers(col, parent):
+    """Flap lever (sweeping its notched quadrant) and the elevator trim lever beside it."""
+    a = math.radians(FLAP_LEVER_UP)
+    d = V(0, math.sin(a), math.cos(a))
+    mb = MB()
+    mb.tube(FLAP_PIVOT, FLAP_PIVOT + d * 0.178, 0.008, n=8, mat="metal")
+    mb.tube(FLAP_PIVOT + d * 0.178, FLAP_PIVOT + d * 0.228, 0.016, 0.014, n=12, mat="knob_red")
+    flap = make_object("HANDLING_Flap_Lever", mb, col, parent, pivot=FLAP_PIVOT, smooth=40)
+    # -X raises a forward-leaning lever: up for flaps
+    animate(flap, 0, [(0, 0), (100, -FLAP_LEVER_TRAVEL)], "flap_lever")
+    piv = V(0.035, -0.44, -0.30)
+    mb = MB()
+    mb.tube(piv, V(0.035, -0.36, -0.25), 0.005, n=8, mat="metal")
+    mb.ellipsoid((0.035, -0.355, -0.247), 0.01, 0.012, 0.018, "black", nu=4, nv=8)
+    trim = make_object("HANDLING_Trim_Lever", mb, col, parent, pivot=piv, smooth=40)
+    animate(trim, 0, [(0, TRIM_TRAVEL), (50, 0), (100, -TRIM_TRAVEL)], "elevator_trim_lever")   # 100 = nose up, lever aft
+
+
+def build_moving_controls(col, parent):
+    for seat, cx in SEATS:
+        build_stick(col, parent, seat, cx)
+        build_pedals(col, parent, seat, cx)
+    build_throttle_knob(col, parent)
+    build_console_levers(col, parent)
 
 
 def frame_point(z, phi_deg, radius):
@@ -1471,15 +1560,11 @@ def build_cabin_interior(col, parent):
     mb.rbox((0, -0.436, 0.16), (0.075, 0.001, 0.075), 0.0, "placard", rot=rot_y(45))
     mb.tube(V(0.0, -0.437, 0.25), V(0.0, -0.37, 0.30), 0.006, n=8, mat="metal")
     mb.ellipsoid((0.0, -0.365, 0.303), 0.012, 0.012, 0.02, "black", nu=4, nv=8)
-    # flap lever with notched quadrant, and the trim lever beside it
+    # flap lever quadrant, one notch per flap setting (the levers: build_moving_controls)
     mb.rbox((0, -0.415, -0.22), (0.012, 0.10, 0.16), 0.004, "metal")
-    for i in range(4):
-        a = math.radians(30 + i * 15)
-        mb.rbox((0, -0.43 + 0.06 * math.sin(a), -0.27 + 0.06 * math.cos(a)), (0.014, 0.006, 0.006), 0.001, "black")
-    mb.tube(V(0.0, -0.44, -0.26), V(0.0, -0.30, -0.16), 0.008, n=8, mat="metal")
-    mb.tube(V(0.0, -0.30, -0.16), V(0.0, -0.26, -0.13), 0.016, 0.014, n=12, mat="knob_red")
-    mb.tube(V(0.035, -0.44, -0.30), V(0.035, -0.36, -0.25), 0.005, n=8, mat="metal")
-    mb.ellipsoid((0.035, -0.355, -0.247), 0.01, 0.012, 0.018, "black", nu=4, nv=8)
+    for i in range(3):
+        a = math.radians(FLAP_LEVER_UP + i * FLAP_LEVER_TRAVEL / 2)
+        mb.rbox(FLAP_PIVOT + V(0, 0.06 * math.sin(a), 0.06 * math.cos(a)), (0.014, 0.006, 0.006), 0.001, "black")
     # baggage shelf and its front lip, wall to wall (the cabin tapers here, so their sides
     # follow it) and into the aft bulkhead; and a fire extinguisher behind the seats
     def wall_slab(z0, z1, y0, y1, mat):
@@ -1509,7 +1594,7 @@ def build_cabin_interior(col, parent):
     for side in (-1, 1):
         cx = side * 0.26
         build_seat(mb, cx)
-        build_controls(mb, cx)
+        build_control_mounts(mb, cx)
     return make_object("Cabin", mb, col, parent, smooth=40)
 
 
@@ -1539,6 +1624,20 @@ def animate(obj, axis_index, keys, name):
         for kp in fc.keyframe_points:
             kp.interpolation = "LINEAR"
     obj.rotation_euler = (0.0, 0.0, 0.0)
+
+
+def animate_slide(obj, axis_index, keys, name):
+    """Location keys (frame, metres along a Blender axis from where it was built), linear."""
+    base = obj.location[axis_index]
+    for frame, offset in keys:
+        obj.location[axis_index] = base + offset
+        obj.keyframe_insert("location", index=axis_index, frame=frame)
+    act = obj.animation_data.action
+    act.name = name
+    for fc in _fcurves(act):
+        for kp in fc.keyframe_points:
+            kp.interpolation = "LINEAR"
+    obj.location[axis_index] = base
 
 
 def _fcurves(action):
@@ -1624,6 +1723,7 @@ def main():
     iroot = make_empty("A240_Interior", inn, size=0.3)
     liner = build_liner(inn, iroot)
     build_cabin_interior(inn, iroot)
+    build_moving_controls(inn, iroot)
     build_screen(inn, iroot)
 
     setup_export_presets(scene, ext, inn)

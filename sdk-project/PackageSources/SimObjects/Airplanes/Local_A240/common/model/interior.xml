@@ -3,4 +3,7 @@
 	<LODS>
 		<LOD minSize="0" ModelFile="A240_interior.gltf"/>
 	</LODS>
+	<CompileBehaviors version="2">
+		<IncludeBase RelativeFile="A240_Interior_Behavior.xml"/>
+	</CompileBehaviors>
 </ModelInfo>
