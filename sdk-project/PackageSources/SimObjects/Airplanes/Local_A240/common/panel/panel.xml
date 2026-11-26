@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Working Title G3X Touch v2 configuration for the A240's single GDU 460 (combined PFD/MFD),
+  as in Aeropro's current Garmin panel: one G3X Touch with an engine strip, a separate Garmin
+  COM, a Trig transponder and no autopilot. Tag reference:
+  https://microsoft.github.io/msfs-avionics-mirror/2024/docs/avionics/g3xtouch/panel-xml-tag-documentation
+
+  Engine limits are from the Rotax 915 iS placard on that panel. The manifold pressure
+  marks are estimates (the placard does not give them); keep them in step with
+  max_design_mp in engines.cfg.
+-->
+<PlaneHTMLConfig>
+	<G3X>
+		<GduDefs count="1">
+			<Gdu index="1" type="PFD" type-index="1" default-adc="1" default-ahrs="1" altimeter-source="1">
+				<FmsPosition gps-receivers="1"></FmsPosition>
+			</Gdu>
+		</GduDefs>
+
+		<Sensors adc-count="1" ahrs-count="1">
+			<Adc index="1" airspeed-indicator="1"></Adc>
+			<Ahrs index="1" attitude-indicator="1" direction-indicator="1"></Ahrs>
+			<Gps index="1" type="internal" gdu-index="1"></Gps>
+		</Sensors>
+
+		<Radios com-count="1" nav-count="0" marker-beacon="false">
+			<Com index="1" sim-index="1"></Com>
+		</Radios>
+
+		<Transponder can-select-mode="true" auto-airborne="true"></Transponder>
+
+		<Engine>
+			<Eis size="wide">
+				<Default>
+					<Gauge>
+						<Type>Circular</Type>
+						<Title>RPM</Title>
+						<Minimum>0</Minimum>
+						<Maximum>6000</Maximum>
+						<ColorZone><Color>green</Color><Begin>1400</Begin><End>5500</End></ColorZone>
+						<ColorZone><Color>yellow</Color><Begin>5500</Begin><End>5800</End></ColorZone>
+						<ColorZone><Color>red</Color><Begin>5800</Begin><End>6000</End></ColorZone>
+						<Style><TextIncrement>10</TextIncrement></Style>
+						<Value><Simvar name="GENERAL ENG RPM:1" unit="rpm"/></Value>
+					</Gauge>
+					<Gauge>
+						<Type>Circular</Type>
+						<Title>MAN IN</Title>
+						<Minimum>10</Minimum>
+						<Maximum>45</Maximum>
+						<ColorZone><Color>green</Color><Begin>10</Begin><End>38</End></ColorZone>
+						<ColorZone><Color>yellow</Color><Begin>38</Begin><End>40</End></ColorZone>
+						<ColorZone><Color>red</Color><Begin>40</Begin><End>45</End></ColorZone>
+						<Style><ValuePrecision>1</ValuePrecision></Style>
+						<Value><Simvar name="RECIP ENG MANIFOLD PRESSURE:1" unit="inHG"/></Value>
+					</Gauge>
+					<Gauge>
+						<Type>Horizontal</Type>
+						<Title>OIL PRES</Title>
+						<Unit>PSI</Unit>
+						<Minimum>0</Minimum>
+						<Maximum>110</Maximum>
+						<ColorZone><Color>red</Color><Begin>0</Begin><End>12</End></ColorZone>
+						<ColorZone><Color>yellow</Color><Begin>12</Begin><End>29</End></ColorZone>
+						<ColorZone><Color>green</Color><Begin>29</Begin><End>73</End></ColorZone>
+						<ColorZone><Color>yellow</Color><Begin>73</Begin><End>102</End></ColorZone>
+						<ColorZone><Color>red</Color><Begin>102</Begin><End>110</End></ColorZone>
+						<Value><Simvar name="GENERAL ENG OIL PRESSURE:1" unit="psi"/></Value>
+					</Gauge>
+					<Gauge>
+						<Type>Horizontal</Type>
+						<Title>OIL TEMP</Title>
+						<Unit>°C</Unit>
+						<Minimum>20</Minimum>
+						<Maximum>140</Maximum>
+						<ColorZone><Color>yellow</Color><Begin>20</Begin><End>50</End></ColorZone>
+						<ColorZone><Color>green</Color><Begin>50</Begin><End>110</End></ColorZone>
+						<ColorZone><Color>yellow</Color><Begin>110</Begin><End>130</End></ColorZone>
+						<ColorZone><Color>red</Color><Begin>130</Begin><End>140</End></ColorZone>
+						<Value><Simvar name="GENERAL ENG OIL TEMPERATURE:1" unit="celsius"/></Value>
+					</Gauge>
+					<Gauge>
+						<Type>Horizontal</Type>
+						<Title>COOLANT</Title>
+						<Unit>°C</Unit>
+						<Minimum>20</Minimum>
+						<Maximum>130</Maximum>
+						<ColorZone><Color>green</Color><Begin>50</Begin><End>120</End></ColorZone>
+						<ColorZone><Color>red</Color><Begin>120</Begin><End>130</End></ColorZone>
+						<Value><Simvar name="ENG CYLINDER HEAD TEMPERATURE:1" unit="celsius"/></Value>
+					</Gauge>
+					<Gauge>
+						<Type>Horizontal</Type>
+						<Title>EGT</Title>
+						<Unit>°C</Unit>
+						<Minimum>300</Minimum>
+						<Maximum>1000</Maximum>
+						<ColorZone><Color>green</Color><Begin>300</Begin><End>950</End></ColorZone>
+						<ColorZone><Color>red</Color><Begin>950</Begin><End>1000</End></ColorZone>
+						<Style><TextIncrement>5</TextIncrement></Style>
+						<Value><Simvar name="GENERAL ENG EXHAUST GAS TEMPERATURE:1" unit="celsius"/></Value>
+					</Gauge>
+					<Gauge>
+						<Type>Horizontal</Type>
+						<Title>FUEL PRES</Title>
+						<Unit>PSI</Unit>
+						<Minimum>30</Minimum>
+						<Maximum>55</Maximum>
+						<ColorZone><Color>red</Color><Begin>30</Begin><End>40.6</End></ColorZone>
+						<ColorZone><Color>green</Color><Begin>40.6</Begin><End>46.4</End></ColorZone>
+						<ColorZone><Color>red</Color><Begin>46.4</Begin><End>55</End></ColorZone>
+						<Style><ValuePrecision>1</ValuePrecision></Style>
+						<Value><Simvar name="GENERAL ENG FUEL PRESSURE:1" unit="psi"/></Value>
+					</Gauge>
+					<Gauge>
+						<Type>Horizontal</Type>
+						<Title>FUEL FLOW</Title>
+						<Unit>GPH</Unit>
+						<Minimum>0</Minimum>
+						<Maximum>12</Maximum>
+						<ColorZone><Color>green</Color><Begin>0</Begin><End>12</End></ColorZone>
+						<Style><ValuePrecision>1</ValuePrecision></Style>
+						<Value><Simvar name="ENG FUEL FLOW GPH:1" unit="gallons per hour"/></Value>
+					</Gauge>
+					<Gauge>
+						<Type>DoubleHorizontal</Type>
+						<Title>FUEL QTY</Title>
+						<Unit>GAL</Unit>
+						<Minimum>0</Minimum>
+						<Maximum>11.25</Maximum>
+						<ColorZone><Color>red</Color><Begin>0</Begin><End>1</End></ColorZone>
+						<ColorZone><Color>yellow</Color><Begin>1</Begin><End>3</End></ColorZone>
+						<ColorZone><Color>green</Color><Begin>3</Begin><End>11.25</End></ColorZone>
+						<Style><ValuePrecision>1</ValuePrecision></Style>
+						<Value><Simvar name="FUEL TANK LEFT MAIN QUANTITY" unit="gallon"/></Value>
+						<Value2><Simvar name="FUEL TANK RIGHT MAIN QUANTITY" unit="gallon"/></Value2>
+					</Gauge>
+					<Gauge>
+						<Type>Horizontal</Type>
+						<Title>VOLTS</Title>
+						<Minimum>10</Minimum>
+						<Maximum>16</Maximum>
+						<ColorZone><Color>red</Color><Begin>10</Begin><End>11</End></ColorZone>
+						<ColorZone><Color>yellow</Color><Begin>11</Begin><End>12</End></ColorZone>
+						<ColorZone><Color>green</Color><Begin>12</Begin><End>14.5</End></ColorZone>
+						<ColorZone><Color>yellow</Color><Begin>14.5</Begin><End>15</End></ColorZone>
+						<ColorZone><Color>red</Color><Begin>15</Begin><End>16</End></ColorZone>
+						<Style><ValuePrecision>1</ValuePrecision></Style>
+						<Value><Simvar name="ELECTRICAL MAIN BUS VOLTAGE" unit="volts"/></Value>
+					</Gauge>
+				</Default>
+			</Eis>
+		</Engine>
+	</G3X>
+
+	<Instrument>
+		<Name>G3XTouch_1</Name>
+	</Instrument>
+</PlaneHTMLConfig>

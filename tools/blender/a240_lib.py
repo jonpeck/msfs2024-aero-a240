@@ -123,7 +123,15 @@ MATERIALS = {
     "arc_white":    _m((0.85, 0.85, 0.85), rough=0.50),
     "lcd":          _m((0.06, 0.09, 0.07), rough=0.15),
     "knob_red":     _m((0.74, 0.06, 0.07), rough=0.45),
+    "knob_yellow":  _m((0.98, 0.68, 0.04), rough=0.40),
     "placard":      _m((0.95, 0.80, 0.10), rough=0.60),
+    # instrument panel (colours sampled from Aeropro's render of the Garmin panel)
+    "panel_grey":   _m((0.40, 0.42, 0.44), rough=0.55),
+    "label":        _m((0.03, 0.03, 0.03), rough=0.40),
+    "label_text":   _m((0.80, 0.80, 0.80), rough=0.60),
+    "bezel":        _m((0.07, 0.07, 0.075), rough=0.35),
+    "button":       _m((0.16, 0.16, 0.17), rough=0.45),
+    "lcd_light":    _m((0.62, 0.65, 0.62), rough=0.25),
     # the cockpit display: the sim paints the HTML instrument onto this material
     SCREEN_MATERIAL: _m((0.32, 0.32, 0.32), rough=0.80, msfs_emissive_factor=(1.0, 1.0, 1.0),
                         msfs_emissive_scale=5000.0),

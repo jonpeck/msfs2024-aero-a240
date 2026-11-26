@@ -12,3 +12,6 @@ __pycache__/
 *.pyc
 *.log
 .claude/settings.local.json
+
+# third-party reference images (Aeropro / AeroTrek), kept locally only
+reference/

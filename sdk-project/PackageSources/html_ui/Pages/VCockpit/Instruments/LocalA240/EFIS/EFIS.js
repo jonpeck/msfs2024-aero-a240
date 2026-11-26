@@ -15,7 +15,7 @@
 
     // Airspeed markings (knots)
     var VS0 = 35, VS1 = 43, VFE = 81, VNO = 108, VNE = 124;
-    // Rotax 912 ULS limits
+    // Rotax 915 iS limits (5800 RPM for 5 min, 5500 continuous)
     var RPM_MAX = 5800, RPM_CAUTION = 5500;
 
     var IN_SIM = typeof SimVar !== "undefined" && typeof BaseInstrument !== "undefined";
@@ -279,7 +279,7 @@
         c.beginPath(); c.moveTo(PFD_W, 0); c.lineTo(PFD_W, H); c.stroke();
 
         var x = PFD_W + 22, w = W - PFD_W - 44;
-        text(c, "ROTAX 912 ULS", x, 30, 20, "#9fb3c8", "left", true);
+        text(c, "ROTAX 915 iS", x, 30, 20, "#9fb3c8", "left", true);
         bar(c, 78, "RPM", d.rpm, String(Math.round(d.rpm / 10) * 10), 0, 6000,
             [[1400, RPM_CAUTION, G], [RPM_CAUTION, RPM_MAX, Y], [RPM_MAX, 6000, R]]);
         bar(c, 158, "OIL °C", d.oilTemp, String(Math.round(d.oilTemp)), 20, 140,

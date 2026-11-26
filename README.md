@@ -1,8 +1,8 @@
 # Aero A240 for Microsoft Flight Simulator 2024
 
 A simple community aircraft modelled on the Aero A240 (the tricycle-gear Aero
-EuroFox): two seats, strut-braced folding high wing, full-span flaperons and a 100 hp
-Rotax 912 ULS.
+EuroFox): two seats, strut-braced folding high wing, full-span flaperons, a 141 hp
+turbocharged Rotax 915 iS and Aeropro's current Garmin G3X Touch instrument panel.
 
 It is a native MSFS 2024 ("modular") aircraft, built with the SDK's package tool. The 3D
 model lives in `blender\A240.blend` and is exported with the SDK's Blender exporter.
@@ -14,9 +14,9 @@ model lives in `blender\A240.blend` and is exported with the SDK's Blender expor
 | Part | State |
 | --- | --- |
 | SDK package build | Builds with no problems reported by the SDK builder |
-| 3D model (exterior + cockpit) | Detailed Blender model (~83k triangles), exported and checked in the viewer. **Not yet built with the SDK or seen in the sim** - the earlier low-detail model was |
-| Flight / engine / systems configs | Written from published A240 figures. Engine, controls and hands-off pitch stability **checked in the sim**; performance not yet tuned |
-| Cockpit display (EFIS) | Works in the sim with live data (airspeed, altitude and heading checked against the sim), and in a browser with demo data |
+| 3D model (exterior + cockpit) | Detailed Blender model (~96k triangles). The instrument panel is traced from Aeropro's 2025 render of its Garmin panel (see [Instrument panel](#instrument-panel)). **Not yet built with the SDK or seen in the sim** - the earlier low-detail model was |
+| Flight / engine / systems configs | Written from published A240 figures. Controls and hands-off pitch stability were **checked in the sim** with the old Rotax 912 ULS; the switch to the 915 iS (turbo, heavier nose) is **not yet flown** |
+| Cockpit display | The sim's own Garmin G3X Touch (Working Title, v2) with a Rotax 915 iS engine strip. **Not yet seen in the sim.** The package's simpler EFIS (checked in the sim with live data, and viewable in a browser) is kept as a fallback - see `panel.cfg` |
 | Sound | **None yet** - the aircraft is silent (see below) |
 | In-simulator test | Engine run-up and basic handling at 80-100 kt tested; flaps, stalls, takeoff and landing **not yet** |
 
@@ -62,8 +62,8 @@ Things the sim depends on - keep these names when editing:
   `SKEL_Rudder`, each with its `*_percent_key` action; keep their origins on the hinge line.
 - `PROPELLER` (blades) and `PROPELLER_Blur` (disc), origins on the propeller axis. The
   spinner stays outside these, or it would vanish with the blades at high RPM.
-- `EFIS_Screen` with material `EFIS_Display` (the HTML display is painted onto it, using
-  its UVs).
+- `EFIS_Screen` with material `EFIS_Display` (the G3X Touch is painted onto it, using its
+  UVs). It is the GDU 460's 5:3 screen, 230.9 x 138.5 mm, to match the 1280 x 768 display.
 
 `tools\blender\make_a240_blend.py` is the script that built the .blend from scratch. Once
 you have edited the .blend by hand, do not re-run it - it overwrites the file.
@@ -99,10 +99,11 @@ sdk-project/                              the SDK project
       common/config/                      aircraft, flight_model, engines, systems,
                                           cameras, cockpit .cfg
       common/model/                       exported glTF + behaviour XML (animations)
-      common/panel/panel.cfg              puts the EFIS on the "EFIS_Display" surface
+      common/panel/panel.cfg              puts the G3X Touch on the "EFIS_Display" surface
+      common/panel/panel.xml              G3X Touch setup: sensors, COM, transponder, engine strip
       common/effects/                     light effects (from the SDK sample)
       presets/local/A240/                 the selectable variant + thumbnails
-    html_ui/.../LocalA240/EFIS/           the cockpit display (HTML canvas)
+    html_ui/.../LocalA240/EFIS/           the older, simpler cockpit display (fallback)
   Packages/                               build output (created by the build)
 blender/
   A240.blend                              the 3D model (source)
@@ -120,6 +121,30 @@ package/                                  the earlier hand-built package (see be
 `package/` is the first, hand-assembled version in the older single-folder layout. It is
 no longer updated by the tools and can be deleted; it is kept only as a fallback.
 
+## Instrument panel
+
+The panel is Aeropro's current factory panel for the Rotax 915 iS, as shown on
+[aeropro.sk/eurofox](https://www.aeropro.sk/eurofox/) (image `panel-garmin-1a`, April 2025).
+That is the newest configuration and the one with the most glass. A local copy of that image and of
+the older panels is kept in `reference/` (git-ignored, as the images are Aeropro's and AeroTrek's). The AeroTrek panel
+(iPad, AvMap EFIS, steam gauges) on aerotrek.aero dates from 2018. Left to right:
+
+- Battery backup (guarded), Lane A/B and Pump A/B (guarded), test button, fuel-reserve light
+- START button and slip ball above a 10.6 in **Garmin G3X Touch** (GDU 460)
+- Standby airspeed (kt), vertical speed (m/s) and altimeter across the top
+- Garmin COM; switches for landing light, position light, strobe, COM, transponder, FLARM,
+  GDU 460, a spare and USB; the Engine/Avionics key; a Trig transponder
+- Pre-flight and Rotax 915 iS limits placards, 12 V and USB sockets, two columns of
+  breakers and the map box on the right
+- Below the panel: the vernier throttle ("idle PULL"), cabin heat and the yellow lever
+
+The render was scaled from two parts of known size, the GDU 460 bezel (10.85 x 7.82 in)
+and the 6.25 in Garmin COM, which agree at 1.83 px/mm. The panel is 0.91 m wide and
+0.28 m tall. In `build_panel()` every item is placed with `pp(x, d)`: mm right of the
+centreline (as the pilot sees it) and mm down from the top centre of the panel, read
+straight off that image. Switches, labels and placards are shapes only: there is no text,
+the needles do not move and nothing is clickable yet.
+
 ## Coordinates
 
 One origin is used everywhere: on the centreline, at the wing quarter-chord, at
@@ -135,8 +160,9 @@ move something in the model (wheels, wing, tail, lights), update the matching nu
   native aircraft. The A240 needs its own sound package, which means Audiokinetic Wwise
   and the SDK's sample Wwise project.
 - **No textures.** Every surface is a flat colour.
-- **Nothing in the cockpit is clickable.** Use keyboard or controller bindings (start the
-  engine with Ctrl+E, or begin the flight on the runway).
+- **Nothing in the cockpit is clickable**, and the standby gauges' needles are fixed. Use
+  keyboard or controller bindings (start the engine with Ctrl+E, or begin the flight on the
+  runway).
 - **Electrical system uses the simple MSFS 2020-style description** (`[ELECTRICAL]`
   `Major = 1`), not the newer modular one.
 - **Not usable in Career mode yet** - that needs `targeted_specializations` in the
@@ -145,10 +171,17 @@ move something in the model (wheels, wing, tail, lights), update the matching nu
 ## Things to check on the first flight
 
 These are the places where I had to estimate; each is a small edit followed by a rebuild.
+For the G3X panel and Rotax 915 iS changes, follow the step-by-step checklist in
+[VERIFY_ON_WINDOWS.md](VERIFY_ON_WINDOWS.md).
 
 - **Blank cockpit display** - the screen is the model material named `EFIS_Display`
-  (`panel.cfg` `texture=`, `SCREEN_MATERIAL` in `tools/blender/a240_lib.py`). The display script
-  uses the sim's older instrument base class.
+  (`panel.cfg` `texture=`, `SCREEN_MATERIAL` in `tools/blender/a240_lib.py`). The G3X Touch
+  throws a JavaScript error if `panel.xml` is missing a required tag; look in the inspector's
+  console (see below). To rule the G3X out, switch `panel.cfg` back to the package's own EFIS
+  (the line to use is in the file).
+- **G3X screen will not take mouse clicks** - it is a touch screen, but this model has no
+  interaction behaviour on it yet. The sim's `Asobo_MPA_G3X_Touch` attachment (bezel model,
+  knobs, buttons) is the documented alternative to a hand-built bezel.
 - **Horizon rolls or pitches the wrong way** - flip the sign in `readSim()` in `EFIS.js`.
 - **Propeller does not turn, or the blur disc never appears** - `prop_node.0` in
   `engines.cfg` and the `PROPELLER` / `PROPELLER_Blur` nodes.
@@ -157,8 +190,12 @@ These are the places where I had to estimate; each is a small edit followed by a
   ~1000 fpm climb, stall ~43 kt clean and ~35 kt with full flap.
 - **Pitch trim / stability feels off** - `htail_incidence` and `aero_center_lift`. In this sim a
   *higher* `htail_incidence` gives *more* nose-up trim; 1.0 trims near level at ~100 kt.
-- **Too much power** - static full throttle gives ~134 ft-lb at ~5065 RPM, more than the 912's
-  100 hp. Lower `power_scalar` in `engines.cfg` if climb and speed come out too strong.
+- **Rotax 915 iS power** - three estimates in `engines.cfg`: `power_scalar` 0.7,
+  `max_design_mp` 40 inHg and `fixed_pitch_beta` 23. Targets: 141 hp at 5800 RPM at full
+  throttle and 135 hp at 5500 RPM, held up to ~15,000 ft. If you change `max_design_mp`,
+  move the MAN IN marks in `panel.xml` with it.
+- **Pitch trim after the engine change** - the 915 adds ~60 lb in the nose, so the empty CG
+  moved from 0.25 to 0.57 ft. Re-check hands-off trim at ~100 kt (`htail_incidence`).
 
 ### Lessons from the first in-sim flights
 

@@ -890,8 +890,38 @@ def build_prop_blur(col, parent, pivot):
 # ============================================================================
 # cabin interior
 # ============================================================================
-SCREEN = dict(x0=-0.415, x1=-0.145, y0=0.000, y1=0.2025, z=0.489)   # 4:3, in front of the left seat
+# The instrument panel is Aeropro's current Garmin panel for the Rotax 915 iS, traced
+# from the factory's head-on render (aeropro.sk/eurofox, image "panel-garmin-1a", 2025).
+# The render was scaled from two parts of known size, the G3X Touch GDU 460 bezel
+# (10.85 x 7.82 in) and the 6.25 in wide Garmin COM, which agree at 1.83 px per mm.
+# Positions on the panel are (x, d) in mm: x to the right of the centreline as the pilot
+# sees it, d down from the top centre of the panel.
 PANEL_Z = 0.50            # rear face of the instrument panel (towards the pilot)
+PANEL_TOP_Y = 0.290       # top centre of the panel
+PANEL_T = 0.006           # panel sheet thickness
+# outline, right half, from the top centre round to the bottom corner: (half width, d)
+PANEL_OUTLINE = [(0, 0), (61, 0.5), (105, 2.2), (149, 4.4), (192, 8.7), (236, 14.8), (262, 19.7),
+                 (287, 26.2), (307, 32.8), (324, 39.3), (339, 45.9), (351, 52.5), (362, 59.0),
+                 (372, 65.6), (381, 72.1), (390, 78.7), (398, 85.2), (405, 91.8), (411.5, 98.4),
+                 (417, 104.9), (422, 111.5), (427, 118.0), (431, 124.6), (435, 131.1), (438, 137.7),
+                 (441, 144.3), (443, 150.8), (445, 157.4), (446.5, 164.0), (447.5, 172.0), (448, 185),
+                 (449, 205), (450, 225), (452, 245), (453.5, 262), (454, 272), (451, 278.5),
+                 (446, 280.3)]
+RIM_END_D = 172.0         # the black edge roll along the top ends this far down the sides
+# G3X Touch GDU 460: bezel 275.6 x 198.6 mm; the 10.6 in 5:3 screen (1280 x 768) is
+# 230.9 x 138.5 mm, centred across the bezel and 7.4 mm above its centre.
+G3X = dict(x=-229.5, d=166.4, w=275.6, h=198.6)
+G3X_SCREEN = dict(x=-229.5, d=159.0, w=230.9, h=138.5)
+_S = G3X_SCREEN
+SCREEN = dict(x0=(_S["x"] - _S["w"] / 2) / 1000, x1=(_S["x"] + _S["w"] / 2) / 1000,
+              y0=PANEL_TOP_Y - (_S["d"] + _S["h"] / 2) / 1000, y1=PANEL_TOP_Y - (_S["d"] - _S["h"] / 2) / 1000,
+              z=PANEL_Z - 0.0065)
+G3X_FACE_Z = PANEL_Z - 0.010     # front of the bezel frame
+
+
+def pp(x, d, dz=0.0):
+    """Panel position (mm right, mm down from the top centre) -> sim point, dz along +z."""
+    return V(x / 1000.0, PANEL_TOP_Y - d / 1000.0, PANEL_Z + dz)
 
 
 def bulkhead(mb, z0, z1, mat="panel"):
@@ -903,8 +933,55 @@ def bulkhead(mb, z0, z1, mat="panel"):
     mb.loft(rings, mat)
 
 
-def gauge(mb, cx, cy, r, arcs=(), ticks=12, needle_deg=40, mat_face="gauge_face"):
-    """Round instrument: bezel, face, tick marks, coloured arcs, needle."""
+def rounded_poly(pts, r, n=3):
+    """Round the corners of a convex 2D polygon (mm) with radius-ish r (quadratic blends)."""
+    out = []
+    m = len(pts)
+    for i in range(m):
+        p, a, b = V(*pts[i]), V(*pts[i - 1]), V(*pts[(i + 1) % m])
+        ra = min(r, (a - p).length * 0.45)
+        rb = min(r, (b - p).length * 0.45)
+        p0 = p + (a - p).normalized() * ra
+        p1 = p + (b - p).normalized() * rb
+        for k in range(n + 1):
+            t = k / n
+            q = p0 * (1 - t) ** 2 + p * 2 * t * (1 - t) + p1 * t * t
+            out.append((q.x, q.y))
+    return out
+
+
+def flat_poly(mb, pts, z0, z1, mat):
+    """Slab between z0 and z1 whose outline is a convex polygon of panel (x, d) points in mm."""
+    rings = [[pp(x, d, z - PANEL_Z) for x, d in pts] for z in (z0, z1)]
+    mb.loft(rings, mat)
+
+
+def plate(mb, x, d, w, h, mat="label", lines=0, dz=0.0):
+    """Label or placard: a thin plate standing proud of the panel, with faint 'text' lines."""
+    depth = 0.0008
+    mb.rbox(pp(x, d, dz - depth / 2), (w / 1000.0, h / 1000.0, depth), 0.0004, mat)
+    for i in range(lines):
+        ly = d - h / 2 + h * (i + 0.8) / (lines + 0.6)
+        lw = w * (0.7 if lines == 1 else (0.82 if i % 3 else 0.6))
+        lx = x if lines == 1 else x - (w - lw) / 2 + w * 0.05          # one word centred, text left-aligned
+        mb.rbox(pp(lx, ly, dz - depth - 0.0002), (lw / 1000.0 * 0.9, min(0.0011, h / 1000.0 / (lines * 2.2)), 0.0003),
+                0.0, "label_text")
+
+
+def led(mb, x, d, lens="lens_red", r=0.0028, dz=0.0):
+    c = pp(x, d, dz)
+    mb.disc(c + V(0, 0, -0.0015), (0, 0, 1), r + 0.0018, 0.003, n=12, mat="chrome")
+    mb.ellipsoid(c + V(0, 0, -0.003), r, r, r * 0.8, lens, nu=4, nv=10)
+
+
+def screw(mb, x, d, dz=0.0):
+    mb.disc(pp(x, d, dz - 0.0008), (0, 0, 1), 0.0028, 0.0016, n=10, mat="metal_dark")
+
+
+def gauge(mb, cx, cy, r, arcs=(), ticks=12, needle_deg=40, mat_face="gauge_face", span=(-135, 135),
+          bezel=0.008):
+    """Round instrument: bezel, face, tick marks, coloured arcs, needle. Angles are degrees
+    clockwise from 12 o'clock."""
     z = PANEL_Z
     c = V(cx, cy, z)
     n = 32
@@ -913,7 +990,7 @@ def gauge(mb, cx, cy, r, arcs=(), ticks=12, needle_deg=40, mat_face="gauge_face"
         return [c + V(rad * math.cos(2 * math.pi * j / n), rad * math.sin(2 * math.pi * j / n), dz) for j in range(n)]
     # bezel and recessed face as one closed solid: the back cap lies on the panel
     face_pick = lambda q: mat_face if (abs(q.z - (z - 0.003)) < 1e-4 and (q - c).xy.length < r * 0.5) else "black"
-    mb.loft([ring(r + 0.008, 0), ring(r + 0.006, -0.007), ring(r, -0.007), ring(r, -0.003)], face_pick)
+    mb.loft([ring(r + bezel, 0), ring(r + bezel - 0.002, -0.007), ring(r, -0.007), ring(r, -0.003)], face_pick)
     zf = z - 0.0031
     toward = V(0, 0, -1)                     # markings stand up off the face towards the pilot
 
@@ -927,11 +1004,10 @@ def gauge(mb, cx, cy, r, arcs=(), ticks=12, needle_deg=40, mat_face="gauge_face"
 
     def slab(p0, p1, hw, mat, thick=0.0004):
         mb.sweep([p0, p1], mat=mat, up=toward, profile=[(0, -hw), (thick, -hw), (thick, hw), (0, hw)])
-    # arcs (start deg, end deg, material) measured clockwise from 12 o'clock
     for a0, a1, mat in arcs:
         band(a0, a1, r * 0.80, r * 0.90, mat)
     for i in range(ticks):
-        a = math.radians(-135 + 270 * i / (ticks - 1))
+        a = math.radians(span[0] + (span[1] - span[0]) * i / max(ticks - 1, 1))
         d = V(math.sin(a), math.cos(a), 0)
         slab(c + d * (r * 0.76) + V(0, 0, -0.0031), c + d * (r * 0.95) + V(0, 0, -0.0031), 0.0011, "gauge_mark",
              thick=0.0005)
@@ -942,10 +1018,10 @@ def gauge(mb, cx, cy, r, arcs=(), ticks=12, needle_deg=40, mat_face="gauge_face"
     mb.disc(c + V(0, 0, -0.005), (0, 0, 1), r * 0.10, 0.002, n=12, mat="black")
 
 
-def toggle(mb, x, y, angle=20):
-    mb.disc((x, y, PANEL_Z - 0.002), (0, 0, 1), 0.007, 0.004, n=6, mat="chrome")
-    tip = V(x, y + 0.016 * math.sin(math.radians(angle)), PANEL_Z - 0.018 * math.cos(math.radians(angle)))
-    mb.tube(V(x, y, PANEL_Z - 0.003), tip, 0.0025, 0.0018, n=6, mat="chrome")
+def toggle(mb, x, y, angle=20, z=PANEL_Z):
+    mb.disc((x, y, z - 0.002), (0, 0, 1), 0.007, 0.004, n=6, mat="chrome")
+    tip = V(x, y + 0.016 * math.sin(math.radians(angle)), z - 0.018 * math.cos(math.radians(angle)))
+    mb.tube(V(x, y, z - 0.003), tip, 0.0025, 0.0018, n=6, mat="chrome")
     mb.ellipsoid(tip, 0.003, 0.003, 0.003, "chrome", nu=4, nv=6)
 
 
@@ -954,16 +1030,69 @@ def knob(mb, x, y, r=0.011, depth=0.018, mat="black", z=PANEL_Z):
     mb.tube(V(x, y, z - depth * 0.4), V(x, y, z - depth), r, r * 0.9, n=14, mat=mat)
 
 
+def panel_switch(mb, x, d, label_w=20.0, label_dd=-9.5, off_dd=10.5):
+    """Toggle (shown OFF, lever down) with its name plate above and OFF plate below."""
+    c = pp(x, d)
+    toggle(mb, c.x, c.y, angle=-20)
+    plate(mb, x, d + label_dd, label_w, 5.0, lines=1)
+    plate(mb, x, d + off_dd, 11.0, 4.5, lines=1)
+
+
+def asi_angle(kt):
+    """The airspeed dial in the render: 40 kt at 1 o'clock, 240 kt at 11 o'clock."""
+    return kt / 40.0 * 25.0 if kt < 40 else 25.0 + (kt - 40.0) * 1.525
+
+
+def build_g3x(mb):
+    """Garmin G3X Touch GDU 460: bezel frame round a recessed screen, knobs and keys below."""
+    g, s = G3X, G3X_SCREEN
+    bx0, bx1 = g["x"] - g["w"] / 2, g["x"] + g["w"] / 2
+    bd0, bd1 = g["d"] - g["h"] / 2, g["d"] + g["h"] / 2
+    sx0, sx1 = s["x"] - s["w"] / 2, s["x"] + s["w"] / 2
+    sd0, sd1 = s["d"] - s["h"] / 2, s["d"] + s["h"] / 2
+    mb.rbox(pp(g["x"], g["d"], -0.003), (g["w"] / 1000, g["h"] / 1000, 0.006), 0.004, "black")
+    fz, fd = -0.008, 0.004            # frame centre and depth (front face at G3X_FACE_Z)
+    for (x0, x1, d0, d1) in ((bx0, bx1, bd0, sd0), (bx0, bx1, sd1, bd1), (bx0, sx0, sd0, sd1), (sx1, bx1, sd0, sd1)):
+        mb.rbox(pp((x0 + x1) / 2, (d0 + d1) / 2, fz), ((x1 - x0) / 1000, (d1 - d0) / 1000, fd), 0.0012, "bezel")
+    kd = bd1 - 16.5                   # control row
+    zf = G3X_FACE_Z
+    for dx in (-115.0, 115.0):
+        c = pp(g["x"] + dx, kd)
+        knob(mb, c.x, c.y, r=0.0105, depth=0.009, z=zf)
+        knob(mb, c.x, c.y, r=0.0068, depth=0.017, z=zf)
+    for dx in (-85.0, -58.0, 56.0, 83.0):
+        mb.rbox(pp(g["x"] + dx, kd, fz - 0.0035), (0.016, 0.008, 0.003), 0.0015, "button")
+    for dx in (-70.5, 70.5):
+        mb.disc(pp(g["x"] + dx, kd, fz - 0.002), (0, 0, 1), 0.0016, 0.001, n=8, mat="lcd")
+    mb.rbox(pp(g["x"], kd, fz - 0.0021), (0.025, 0.0025, 0.0004), 0.0, "inlet_dark")      # SD card slot
+
+
 def build_panel(mb):
     z = PANEL_Z
-    # panel: shaped slab that follows the cabin cross-section
+    # black backing that closes the cabin cross-section behind and beside the panel
     rings = []
-    ys = [-0.11, -0.08, -0.03, 0.05, 0.13, 0.21, 0.26, 0.285]
-    for zz in (z, z + 0.04):
+    ys = [0.004, 0.03, 0.08, 0.13, 0.18, 0.23, 0.27, 0.302]
+    for zz in (z + PANEL_T, z + 0.04):
         left = [V(-min(inner_halfwidth(zz, y, 0.965), 0.53), y, zz) for y in ys]
         right = [V(min(inner_halfwidth(zz, y, 0.965), 0.53), y, zz) for y in reversed(ys)]
         rings.append(left + right)
-    mb.loft(rings, "panel")
+    mb.loft(rings, "black")
+    # the panel itself: grey sheet with the arched top of the render
+    right = list(PANEL_OUTLINE)
+    outline = [(-x, d) for x, d in reversed(right[1:])] + right
+    flat_poly(mb, outline, z, z + PANEL_T, "panel_grey")
+    # black edge roll along the top, deepening towards the sides
+    arc = [(x, d) for x, d in outline if d <= RIM_END_D]
+    rings = []
+    for i, (x, d) in enumerate(arc):
+        a, b = arc[max(i - 1, 0)], arc[min(i + 1, len(arc) - 1)]
+        t = V(b[0] - a[0], -(b[1] - a[1]), 0).normalized()        # along the edge, sim xy
+        nrm = V(-t.y, t.x, 0)                                      # outward (up / sideways)
+        w = 0.0055 + 0.016 * (abs(x) / 450.0) ** 4
+        p = pp(x, d)
+        po, pi = p + nrm * 0.0015, p - nrm * w
+        rings.append([po + V(0, 0, 0.004), po + V(0, 0, -0.016), pi + V(0, 0, -0.012), pi + V(0, 0, 0.004)])
+    mb.loft(rings, "black")
     # glareshield: a padded hood from the panel top forward to the windshield, its
     # width following the narrowing nose so it stays inside the glazing
     rings = []
@@ -982,50 +1111,130 @@ def build_panel(mb):
             ring.append(V(x, ytop - lip + sag * 0.5, zz))
         rings.append(ring)
     mb.loft(rings, "black")
-    # EFIS bezel with soft keys and knobs
-    s = SCREEN
-    mb.rbox(((s["x0"] + s["x1"]) / 2, (s["y0"] + s["y1"]) / 2 - 0.006, z - 0.0045),
-            (s["x1"] - s["x0"] + 0.04, s["y1"] - s["y0"] + 0.052, 0.009), 0.006, "black")
-    for i in range(7):
-        x = s["x0"] + 0.015 + i * (s["x1"] - s["x0"] - 0.03) / 6
-        mb.rbox((x, s["y0"] - 0.018, z - 0.012), (0.022, 0.009, 0.005), 0.002, "panel")
-    for x in (s["x0"] - 0.002, s["x1"] + 0.002):
-        knob(mb, x, s["y0"] - 0.018, r=0.008, depth=0.018, z=z - 0.011)
-    # backup instruments: airspeed, altimeter, tachometer above the radio stack
-    gy = 0.212
-    gauge(mb, 0.035, gy, 0.031, arcs=((-120, -40, "arc_white"), (-80, 60, "arc_green"),
-                                      (60, 110, "arc_yellow"), (110, 113, "arc_red")), needle_deg=-60)
-    gauge(mb, 0.135, gy, 0.031, ticks=10, needle_deg=110)
-    gauge(mb, 0.235, gy, 0.031, arcs=((-100, 70, "arc_green"), (70, 100, "arc_yellow"),
-                                      (100, 104, "arc_red")), needle_deg=-120)
-    gauge(mb, 0.335, gy, 0.031, arcs=((-60, 60, "arc_green"),), ticks=9, needle_deg=0)
-    # COM radio and transponder
-    for y0, y1, lcd in ((0.095, 0.165, (0.165, 0.285, 0.115, 0.148)), (0.020, 0.080, (0.165, 0.285, 0.035, 0.062))):
-        mb.rbox((0.225, (y0 + y1) / 2, z - 0.006), (0.25, y1 - y0, 0.014), 0.004, "black")
-        mb.rbox(((lcd[0] + lcd[1]) / 2, (lcd[2] + lcd[3]) / 2, z - 0.0135), (lcd[1] - lcd[0], lcd[3] - lcd[2], 0.002),
-                0.0008, "lcd")
-        knob(mb, 0.125, (y0 + y1) / 2, r=0.013, depth=0.03, z=z - 0.012)
-        knob(mb, 0.125, (y0 + y1) / 2, r=0.008, depth=0.04, z=z - 0.012)
-        knob(mb, 0.320, (y0 + y1) / 2, r=0.009, depth=0.024, z=z - 0.012)
-        for i in range(4):
-            mb.rbox((0.175 + i * 0.03, y0 + 0.008, z - 0.0135), (0.02, 0.007, 0.003), 0.001, "panel")
-    # toggle switch row under the display, key switch and master, breakers, pull knobs
-    for i in range(6):
-        toggle(mb, -0.395 + i * 0.045, -0.055)
-        mb.rbox((-0.395 + i * 0.045, -0.078, z - 0.0005), (0.03, 0.007, 0.001), 0.0, "gauge_mark")
-    mb.disc((-0.475, 0.06, z - 0.003), (0, 0, 1), 0.016, 0.006, n=16, mat="chrome")
-    mb.rbox((-0.475, 0.06, z - 0.012), (0.006, 0.026, 0.012), 0.002, "black")
-    for i in range(6):
-        x = 0.135 + i * 0.038
-        mb.tube(V(x, -0.055, z), V(x, -0.055, z - 0.012), 0.0065, n=10, mat="black")
-        mb.tube(V(x, -0.055, z - 0.012), V(x, -0.055, z - 0.016), 0.004, n=8, mat="gauge_mark")
-    for x, mat in ((-0.08, "black"), (-0.035, "knob_red"), (0.36, "black")):
-        knob(mb, x, -0.075, r=0.011, depth=0.03, mat=mat)
-    mb.rbox((-0.06, -0.095, z - 0.0005), (0.07, 0.008, 0.001), 0.0, "placard")
-    # throttle (push-pull) and its friction lock
-    mb.tube(V(0.07, -0.045, z), V(0.07, -0.045, 0.43), 0.006, n=8, mat="chrome")
-    mb.ellipsoid(V(0.07, -0.045, 0.42), 0.022, 0.022, 0.018, "black", nu=6, nv=14)
-    mb.disc((0.07, -0.045, z - 0.003), (0, 0, 1), 0.012, 0.006, n=12, mat="metal")
+
+    build_g3x(mb)
+
+    # --- top row: engine start, slip ball, standby airspeed / vertical speed / altimeter
+    led(mb, -249.7, 44.8, "lens_green", r=0.0024)
+    c = pp(-226.8, 45.4)
+    mb.disc(c + V(0, 0, -0.002), (0, 0, 1), 0.012, 0.004, n=20, mat="chrome")
+    mb.disc(c + V(0, 0, -0.006), (0, 0, 1), 0.0078, 0.005, n=20, mat="metal")
+    c = pp(-126.0, 44.3)
+    mb.rbox(c + V(0, 0, -0.011), (0.067, 0.036, 0.022), 0.005, "black")
+    tube = [c + V(0.026 * (k / 6.0 - 1), 0.004 * (1 - (k / 6.0 - 1) ** 2) - 0.002, -0.0225) for k in range(13)]
+    mb.sweep(tube, radius=0.0045, n=10, mat="gauge_mark")
+    mb.ellipsoid(c + V(0, -0.0015, -0.027), 0.0034, 0.0034, 0.0034, "black", nu=4, nv=10)
+    gy = PANEL_TOP_Y - 0.063
+    asi_arcs = ((asi_angle(35), asi_angle(81), "arc_white"), (asi_angle(43), asi_angle(94.5), "arc_green"),
+                (asi_angle(94.5), asi_angle(124), "arc_yellow"), (asi_angle(124), asi_angle(126), "arc_red"))
+    gauge(mb, -0.043, gy, 0.032, arcs=asi_arcs, ticks=11, span=(25, 330), needle_deg=2, bezel=0.0075)
+    gauge(mb, 0.051, gy, 0.032, ticks=20, span=(-252, 90), needle_deg=-90, bezel=0.0075)
+    gauge(mb, 0.145, gy, 0.032, ticks=10, span=(0, 324), needle_deg=210, bezel=0.0075)
+    c = pp(112.0, 88.0)
+    knob(mb, c.x, c.y, r=0.0075, depth=0.012)                    # altimeter baro knob
+    plate(mb, 246.2, 50.5, 73.7, 23.5, lines=5)                  # passenger warning
+
+    # --- left column: fuel reserve light, test, engine lanes A/B, fuel pumps, battery backup
+    plate(mb, -387.2, 107.4, 31.0, 10.4, lines=2)
+    plate(mb, -403.3, 120.8, 14.0, 4.4, lines=1)
+    c = pp(-403.3, 129.0)
+    mb.disc(c + V(0, 0, -0.002), (0, 0, 1), 0.0055, 0.004, n=6, mat="chrome")
+    mb.disc(c + V(0, 0, -0.005), (0, 0, 1), 0.0035, 0.003, n=12, mat="knob_red")
+    led(mb, -387.2, 129.0)
+    for row_d, lbl_d, off_d, (g0, g1), leds in ((180.3, 164.2, 195.6, (167.2, 197.3), True),
+                                                (221.3, 204.4, 236.6, (208.2, 238.3), False)):
+        for x in (-410.1, -387.2):
+            if leds:
+                led(mb, x + 0.6, 155.7)
+            plate(mb, x, lbl_d, 16.0, 5.0, lines=1)
+            c = pp(x, row_d)
+            toggle(mb, c.x, c.y, angle=-20)
+            plate(mb, x, off_d, 11.0, 4.5, lines=1)
+        for gx in (-420.0, -398.1, -376.2):                    # switch guards
+            mb.rbox(pp(gx, (g0 + g1) / 2, -0.010), (0.0042, (g1 - g0) / 1000, 0.020), 0.0019, "chrome")
+    plate(mb, -435.0, 203.8, 15.0, 3.8, lines=1)
+    mb.rbox(pp(-435.0, 224.6, -0.006), (0.015, 0.038, 0.012), 0.0045, "knob_red")    # battery backup, guarded
+    mb.rbox(pp(-435.0, 224.6, -0.0122), (0.007, 0.026, 0.0008), 0.0, "label")
+
+    # --- centre: COM radio, switch row, key switch, transponder
+    mb.rbox(pp(17.2, 127.0, -0.004), (0.159, 0.0323, 0.008), 0.0015, "black")
+    mb.rbox(pp(17.5, 125.35, -0.0082), (0.0883, 0.0219, 0.0006), 0.0, "lcd")
+    for x, d in ((-54.8, 118.4), (-37.5, 118.4), (-37.5, 130.8), (72.7, 118.4), (90.9, 118.4)):
+        mb.rbox(pp(x, d, -0.0095), (0.010, 0.006, 0.003), 0.0012, "button")
+    mb.disc(pp(-46.1, 124.4, -0.0088), (0, 0, 1), 0.0028, 0.0016, n=10, mat="metal")
+    c = pp(-55.7, 130.8)
+    knob(mb, c.x, c.y, r=0.006, depth=0.012, z=z - 0.008)
+    c = pp(85.4, 132.6)
+    knob(mb, c.x, c.y, r=0.0085, depth=0.010, z=z - 0.008)
+    knob(mb, c.x, c.y, r=0.0055, depth=0.017, z=z - 0.008)
+    for i in range(9):          # Land light, Pos light, Strobe, COM, TXP, FLARM, GDU 460, Free, USB
+        panel_switch(mb, -71.2 + i * 21.96, 160.0)
+    c = pp(-55.7, 200.0)
+    mb.disc(c + V(0, 0, -0.002), (0, 0, 1), 0.0127, 0.004, n=20, mat="chrome")
+    mb.tube(c + V(0, 0, -0.004), c + V(0, 0, -0.011), 0.0085, n=16, mat="metal")
+    mb.rbox(c + V(0, 0, -0.0115), (0.0016, 0.0085, 0.002), 0.0, "black")
+    plate(mb, -73.0, 195.9, 23.7, 17.3, lines=3)
+    # transponder control head (Trig TT21 style)
+    tx, td = 62.65, 200.0
+    mb.rbox(pp(tx, td, -0.004), (0.0619, 0.0438, 0.008), 0.004, "black")
+    mb.rbox(pp(61.7, 195.4, -0.0082), (0.031, 0.0164, 0.0006), 0.0, "lcd_light")
+    for x, d in ((39.0, 190.8), (86.3, 190.8), (86.3, 203.6)):
+        mb.disc(pp(x, d, -0.0095), (0, 0, 1), 0.0035, 0.003, n=12, mat="gauge_mark")
+    mb.rbox(pp(60.8, 214.6, -0.0095), (0.010, 0.005, 0.003), 0.0024, "gauge_mark")
+    for x in (44.4, 79.1):
+        c = pp(x, 214.6)
+        knob(mb, c.x, c.y, r=0.0058, depth=0.010, z=z - 0.008)
+    for dx in (-27.0, 27.0):
+        for dd in (-18.5, 18.5):
+            screw(mb, tx + dx, td + dd, -0.008)
+    led(mb, 103.7, 181.7, r=0.0038)
+
+    # --- right: placards, 12 V and USB sockets, circuit breakers, map box
+    plate(mb, 158.2, 132.6, 69.4, 42.1, lines=8)               # pre-flight check
+    plate(mb, 244.3, 132.6, 97.3, 42.1, lines=7)               # Rotax 915 iS limits
+    plate(mb, 368.3, 91.5, 24.0, 10.4, lines=2)
+    c = pp(367.8, 111.2)
+    mb.disc(c + V(0, 0, -0.003), (0, 0, 1), 0.0135, 0.006, n=24, mat="chrome")
+    mb.disc(c + V(0, 0, -0.0062), (0, 0, 1), 0.0090, 0.0006, n=20, mat="inlet_dark")
+    c = pp(368.3, 152.2)
+    mb.disc(c + V(0, 0, -0.003), (0, 0, 1), 0.0175, 0.006, n=24, mat="black")
+    for dd in (-4.8, 4.8):
+        mb.rbox(pp(368.3, 152.2 + dd, -0.0062), (0.0085, 0.0032, 0.0006), 0.0, "inlet_dark")
+    plate(mb, 368.3, 175.1, 10.0, 5.0, lines=1)
+    rows = (113.1, 152.2, 167.8, 183.6, 199.2, 214.8, 230.9)
+    for x, lx, ds in ((402.7, 390.2, rows), (421.0, 431.7, rows[1:])):
+        for d in ds:
+            c = pp(x, d)
+            mb.disc(c + V(0, 0, -0.0015), (0, 0, 1), 0.006, 0.003, n=16, mat="black")
+            mb.tube(c + V(0, 0, -0.003), c + V(0, 0, -0.008), 0.0034, n=12, mat="button")
+            plate(mb, lx, d, 8.0, 4.5, lines=1)
+    box = rounded_poly([(133.9, 180.9), (348.6, 180.9), (383.0, 205.5), (383.0, 261.2), (133.9, 261.2)], 11.0)
+    flat_poly(mb, box, z - 0.0025, z, "black")
+    inner = rounded_poly([(140.5, 187.5), (345.6, 187.5), (376.4, 209.5), (376.4, 254.6), (140.5, 254.6)], 7.0)
+    flat_poly(mb, inner, z - 0.0027, z - 0.0024, "inlet_dark")
+    for x, d in ((-416.4, 257.4), (414.2, 254.6), (-85.8, 257.4), (119.1, 257.4)):
+        screw(mb, x, d)
+
+    # --- console plate below: vernier throttle, cabin heat, brake lever
+    tab = rounded_poly([(-77.0, 228.0), (111.0, 228.0), (111.0, 282.0), (105.0, 301.6), (-71.0, 301.6),
+                        (-77.0, 282.0)], 8.0)
+    flat_poly(mb, tab, z - 0.005, z + 0.001, "panel_grey")
+    tz = z - 0.005
+    c = pp(12.6, 252.0)
+    mb.disc(V(c.x, c.y, tz - 0.005), (0, 0, 1), 0.0285, 0.010, n=8, mat="black")          # friction lock nut
+    mb.tube(V(c.x, c.y, tz - 0.010), V(c.x, c.y, tz - 0.040), 0.005, n=12, mat="chrome")
+    mb.tube(V(c.x, c.y, tz - 0.040), V(c.x, c.y, tz - 0.066), 0.019, 0.0185, n=24, mat="black")
+    mb.sweep([V(c.x + 0.0195 * math.cos(a), c.y + 0.0195 * math.sin(a), tz - 0.053) for a in
+              [2 * math.pi * j / 24 for j in range(24)]], radius=0.002, n=5, mat="black", closed=True)
+    mb.tube(V(c.x, c.y, tz - 0.066), V(c.x, c.y, tz - 0.071), 0.010, 0.009, n=16, mat="button")
+    plate(mb, -36.1, 239.9, 37.0, 9.0, lines=2, dz=-0.005)
+    c = pp(70.0, 290.0)
+    knob(mb, c.x, c.y, r=0.009, depth=0.020, z=tz)                                     # cabin heat
+    plate(mb, 69.4, 272.2, 29.0, 8.0, lines=2, dz=-0.005)
+    c = pp(-54.6, 252.0)
+    mb.disc(V(c.x, c.y, tz - 0.003), (0, 0, 1), 0.006, 0.006, n=12, mat="metal")         # brake lever pivot
+    mb.rbox(pp(-54.6, 289.4, -0.005 - 0.009), (0.0186, 0.079, 0.012), 0.0062, "knob_yellow")
+
     # compass on the glareshield
     mb.rbox((0.0, 0.345, 0.55), (0.07, 0.05, 0.06), 0.012, "black", rot=rot_x(-8))
     mb.rbox((0.0, 0.345, 0.519), (0.045, 0.025, 0.002), 0.004, "gauge_face")
