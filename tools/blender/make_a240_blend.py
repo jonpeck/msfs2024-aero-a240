@@ -7,9 +7,11 @@ hand, treat the .blend as the source and do NOT re-run this script: it overwrite
 file. Export with tools/blender/export_a240.py (or tools/build_sdk.ps1).
 
 All numbers are sim-frame metres (see a240_lib.py): +x right, +y up, +z nose, origin
-at the wing quarter-chord on the propeller axis. Positions that the .cfg files rely on
-(wheels, wing, tail, lights, eyepoint, cockpit screen) are unchanged from the earlier
-procedural model.
+at the wing quarter-chord on the propeller axis. The wheels, wing, eyepoint and cockpit
+screen are where the .cfg files expect them. The exterior shape follows the AeroTrek
+three-view (https://www.aerotrek.aero/photos/tech/dimensions.gif) and the side-on photos
+on aerotrek.aero; the propeller plane, tail light, landing light and tail / nose scrape
+points in engines.cfg, systems.cfg and flight_model.cfg match this geometry.
 """
 import math
 import os
@@ -29,22 +31,28 @@ from a240_lib import (B, BLEND_PATH, FPS, MB, MODEL_DIR, SCREEN_MATERIAL, V, air
 GROUND_Y = -1.12
 
 # z, half width, y bottom, y top, superellipse exponent
+# Side profile from the AeroTrek three-view (aerotrek.aero/photos/tech/dimensions.gif)
+# checked against side-on photos: a short, round cowl (spinner tip 1.51 m ahead of the
+# wing leading edge) and a deep steel-tube tail cone whose sides and belly run in straight
+# lines from the cabin back to the rudder post. The cabin keeps the published 44 in width.
 FUSELAGE = [
-    (1.80, 0.235, -0.26, 0.19, 2.5),    # cowl front
-    (1.62, 0.33, -0.35, 0.25, 2.6),
-    (1.25, 0.42, -0.45, 0.30, 2.8),
-    (0.95, 0.49, -0.52, 0.32, 3.2),     # firewall
+    (1.60, 0.27, -0.17, 0.18, 2.4),     # cowl front, behind the spinner (small chin below it)
+    (1.47, 0.36, -0.28, 0.23, 2.6),
+    (1.25, 0.44, -0.38, 0.27, 2.8),
+    (0.90, 0.51, -0.50, 0.30, 3.2),     # firewall / cowl joint
     (0.80, 0.53, -0.55, 0.34, 3.5),     # windshield base
     (0.31, 0.56, -0.58, 0.66, 4.0),     # windshield top / wing leading edge
     (0.00, 0.57, -0.58, 0.66, 4.0),
     (-0.45, 0.56, -0.56, 0.66, 4.0),
     (-0.94, 0.50, -0.50, 0.62, 3.6),    # aft cabin / wing trailing edge
-    (-1.40, 0.37, -0.38, 0.47, 3.0),
-    (-2.20, 0.20, -0.20, 0.31, 2.6),
-    (-3.00, 0.08, -0.03, 0.22, 2.2),
-    (-3.25, 0.045, 0.02, 0.19, 2.0),    # tail post
+    (-1.40, 0.415, -0.42, 0.47, 3.0),
+    (-2.20, 0.265, -0.28, 0.33, 2.7),   # top dips where the dorsal fillet runs in...
+    (-2.60, 0.19, -0.215, 0.31, 2.6),
+    (-3.00, 0.12, -0.15, 0.35, 2.5),    # ...and rises again under the tailplane
+    (-3.30, 0.065, -0.095, 0.38, 2.4),
+    (-3.45, 0.035, -0.07, 0.385, 2.2),  # rudder post
 ]
-FUSELAGE_BREAKS = [0.26, 0.31, -0.60, -0.80, 1.55, 0.95, 0.80]   # paint / glazing edges
+FUSELAGE_BREAKS = [0.26, 0.31, -0.60, -0.80, 1.40, 0.90, 0.80]   # paint / glazing edges
 RING_N = 64
 
 
@@ -123,7 +131,7 @@ def fuselage_material(c):
         return "glass"                                   # door glazing
     if -0.60 < z < 0.26 and phi > 56:
         return "glass_tint"                              # skylight
-    if z > 1.55:
+    if z > 1.40:
         return "paint_red"                               # cowl nose
     if -34 < phi < -22:
         return "paint_red"                               # side stripe
@@ -145,15 +153,12 @@ def build_fuselage(col, parent):
     mb.loft([fuselage_ring(z) for z in fuselage_stations()], fuselage_material)
     obj = make_object("Fuselage", mb, col, parent, smooth=30)
 
-    # cowling openings: two cooling inlets beside the spinner, the radiator chin inlet,
-    # and the air exit under the cowl. Booleans leave dark pockets behind each opening.
+    # cowling openings: the two round cooling inlets close beside the spinner and the
+    # air exit under the cowl. Booleans leave dark pockets behind each opening.
     cut = MB()
     for side in (-1, 1):
-        cut.tube((side * 0.165, 0.035, 1.95), (side * 0.165, 0.035, 1.66), 0.047, n=24, mat="inlet_dark")
-    cut.sweep([(0, -0.178, 1.95), (0, -0.178, 1.66)], mat="inlet_dark",
-              profile=[(math.cos(a) * 0.028, math.sin(a) * 0.075)
-                       for a in [2 * math.pi * j / 24 for j in range(24)]], up=(0, 1, 0))
-    cut.rbox((0, -0.52, 1.02), (0.28, 0.10, 0.16), 0.02, "inlet_dark")
+        cut.tube((side * 0.19, 0.0, 1.75), (side * 0.19, 0.0, 1.45), 0.046, n=24, mat="inlet_dark")
+    cut.rbox((0, -0.47, 1.00), (0.28, 0.10, 0.16), 0.02, "inlet_dark")
     boolean_apply(obj, [cutter_object(cut, col)])
     obj.data.set_sharp_from_angle(angle=math.radians(30))
     return obj
@@ -193,22 +198,22 @@ def build_fuselage_details(col, parent, fus_obj):
     seal_from_boundaries(mb)
 
     # cowling panel lines: the cowl / fuselage joint and the upper / lower cowl split
-    ring = [fus_point(0.95, a) for a in range(0, 360, 4)]
+    ring = [fus_point(0.90, a) for a in range(0, 360, 4)]
     panel_line(mb, ring, closed=True)
     for side in (-1, 1):
         phi = 0 if side > 0 else 180
-        line = [fus_point(z, phi) for z in [0.95 + i * 0.05 for i in range(17)]]
+        line = [fus_point(z, phi) for z in [0.90 + i * 0.05 for i in range(14)]]
         panel_line(mb, line)
         # camloc fasteners along the split line
-        for z in (1.02, 1.17, 1.32, 1.47, 1.62):
+        for z in (0.97, 1.11, 1.25, 1.39, 1.52):
             p = fus_point(z, phi)
             o = fus_out(p)
             mb.disc(p + o * 0.0012, o, 0.007, 0.0025, n=10, mat="metal")
     # oil inspection door on top of the cowl
-    door = ([fus_point(1.28, a) for a in range(78, 103, 3)] +
-            [fus_point(z, 102) for z in (1.32, 1.36, 1.40, 1.44)] +
-            [fus_point(1.48, a) for a in range(102, 77, -3)] +
-            [fus_point(z, 78) for z in (1.44, 1.40, 1.36, 1.32)])
+    door = ([fus_point(1.10, a) for a in range(78, 103, 3)] +
+            [fus_point(z, 102) for z in (1.14, 1.18, 1.22, 1.26)] +
+            [fus_point(1.30, a) for a in range(102, 77, -3)] +
+            [fus_point(z, 78) for z in (1.26, 1.22, 1.18, 1.14)])
     panel_line(mb, door, closed=True)
     # gull-wing doors: outline, hinges along the top and the outside handle
     for side in (-1, 1):
@@ -233,11 +238,12 @@ def build_fuselage_details(col, parent, fus_obj):
         o = fus_out(p)
         mb.ellipsoid(p + o * 0.004, 0.018, 0.022, 0.05, "black", nu=6, nv=10)
     # exhaust: tailpipe out of the cowl exit, slightly to the right
-    mb.sweep([(0.08, -0.46, 1.05), (0.09, -0.53, 1.01), (0.10, -0.58, 0.95)], radius=0.021, n=14,
+    mb.sweep([(0.08, -0.42, 1.05), (0.09, -0.50, 1.01), (0.10, -0.555, 0.94)], radius=0.021, n=14,
              mat="metal_dark")
-    mb.sweep([(-0.08, -0.47, 1.06), (-0.08, -0.55, 1.03)], radius=0.016, n=12, mat="metal_dark")
-    # landing light in the lower cowl
-    mb.ellipsoid((0, -0.272, 1.745), 0.036, 0.018, 0.03, "lens_clear", nu=6, nv=14)
+    mb.sweep([(-0.08, -0.43, 1.06), (-0.08, -0.52, 1.03)], radius=0.016, n=12, mat="metal_dark")
+    # LED landing / taxi lights in the cowl front, under the spinner
+    for side in (-1, 1):
+        mb.ellipsoid((side * 0.065, -0.145, 1.600), 0.022, 0.016, 0.012, "lens_clear", nu=6, nv=14)
     # antennas: COM whip on the top, transponder stub under the belly, GPS puck
     top = fus_point(-1.25, 90)
     mb.disc(top + V(0, 0.003, 0), (0, 1, 0), 0.025, 0.006, n=14, mat="black")
@@ -249,11 +255,15 @@ def build_fuselage_details(col, parent, fus_obj):
     gps = fus_point(-1.60, 90)
     mb.ellipsoid(gps + V(0, 0.004, 0), 0.04, 0.012, 0.05, "paint_white", nu=6, nv=14)
     # tail tie-down ring and tail skid
-    tail = fus_point(-2.95, 270)
+    tail = fus_point(-3.05, 270)
     mb.sweep([tail + V(0.0, -0.01 - 0.018 * math.sin(a), 0.018 * math.cos(a))
               for a in [2 * math.pi * j / 16 for j in range(16)]], radius=0.004, n=6, mat="metal",
              closed=True)
-    mb.rbox(fus_point(-3.18, 270) - V(0, 0.012, 0), (0.035, 0.03, 0.09), 0.01, "rubber")
+    # spring tail skid curling down and aft from under the rudder post
+    s0 = fus_point(-3.28, 270) + V(0, 0.01, 0)
+    mb.sweep([s0, s0 + V(0, -0.06, -0.07), s0 + V(0, -0.105, -0.17), s0 + V(0, -0.115, -0.23),
+              s0 + V(0, -0.105, -0.26)], radius=0.007, n=8, mat="metal")
+    mb.rbox(s0 + V(0, -0.004, 0.01), (0.03, 0.02, 0.06), 0.005, "metal")
     # static vent buttons
     for side in (-1, 1):
         p = fus_point(-1.75, 0 if side > 0 else 180)
@@ -323,13 +333,16 @@ WING_LE_Z = 0.31
 WING_CHORD = 1.02
 WING_INCIDENCE = math.radians(2.0)
 WING_AIRFOIL = (0.04, 0.4, 0.13)
+WING_TIP_X = 4.565          # 29 ft 11.3 in span
+WING_PAINT_X = 3.95         # paint boundary of the coloured tip
 FLAPERON_PIVOT = (0.0, 0.50, -0.72)
+FLAPERON_HANGERS = (0.70, 1.55, 2.40, 3.27, 4.15)
 WCD = V(0.0, -math.sin(WING_INCIDENCE), -math.cos(WING_INCIDENCE))   # chord direction (LE -> TE)
 WTD = V(0.0, math.cos(WING_INCIDENCE), -math.sin(WING_INCIDENCE))    # thickness direction
 
 
 def wing_point(side, x, xc, upper=True, lift=0.0):
-    """Point on the constant-chord wing panel (|x| <= 4.06) and its outward normal."""
+    """Point on the constant-chord wing panel (|x| <= WING_PAINT_X) and its outward normal."""
     yc, (nx, ny) = airfoil_surface(*WING_AIRFOIL, xc, upper)
     o = V(side * x, WING_Y, WING_LE_Z)
     nrm = (WCD * nx + WTD * ny).normalized()
@@ -345,11 +358,13 @@ def roof_y(x, z):
 
 
 def wing_tip_stations():
-    # (x, chord scale, LE set-back, thickness scale): straight panel, then a rounded tip
+    # (x, chord scale, LE set-back, thickness scale): straight panel, then the moulded tip
+    # cap. The real tip is square in plan with only its edges rounded off.
+    t = WING_TIP_X
     st = [(0.50, 1, 0, 1), (0.80, 1, 0, 1), (1.4, 1, 0, 1), (2.0, 1, 0, 1), (2.55, 1, 0, 1),
-          (3.1, 1, 0, 1), (3.6, 1, 0, 1), (4.06, 1, 0, 1), (4.30, 1, 0, 1), (4.48, 0.99, 0.004, 0.97),
-          (4.56, 0.965, 0.012, 0.92), (4.61, 0.92, 0.03, 0.82), (4.645, 0.85, 0.06, 0.66),
-          (4.665, 0.74, 0.11, 0.45), (4.675, 0.60, 0.17, 0.22)]
+          (3.1, 1, 0, 1), (3.6, 1, 0, 1), (WING_PAINT_X, 1, 0, 1), (t - 0.17, 1, 0, 1),
+          (t - 0.07, 0.995, 0.002, 0.97), (t - 0.035, 0.985, 0.007, 0.90), (t - 0.016, 0.965, 0.016, 0.76),
+          (t - 0.006, 0.935, 0.032, 0.55), (t, 0.89, 0.06, 0.25)]
     return st
 
 
@@ -373,7 +388,7 @@ def build_wing(side, col, parent):
             ring.append(q)
         fairing.append(ring)
     rings = fairing + rings
-    mb.loft(rings, lambda c: "paint_red" if abs(c[0]) > 4.06 else "paint_white")
+    mb.loft(rings, lambda c: "paint_red" if abs(c[0]) > WING_PAINT_X else "paint_white")
 
     # rib tapes: the fabric wing shows every rib as a slight ridge
     loop = airfoil_loop(m, p, t, 0.0, 1.0, n=24)
@@ -389,7 +404,7 @@ def build_wing(side, col, parent):
             ups.append(nrm)
         # split into the upper and lower run (skip leading edge, the tape wraps it on the real wing)
         prof = [(0, -0.012), (0.0012, -0.009), (0.0012, 0.009), (0, 0.012)]
-        mb.sweep(pts, mat="paint_white" if x < 4.06 else "paint_red", profile=prof, ups=ups, cap=True)
+        mb.sweep(pts, mat="paint_white" if x < WING_PAINT_X else "paint_red", profile=prof, ups=ups, cap=True)
 
     # fuel cap over the root tank
     pt, nrm = wing_point(side, 0.82, 0.22, True)
@@ -404,7 +419,7 @@ def build_wing(side, col, parent):
         pt, nrm = wing_point(side, 2.55, xc, False)
         mb.rbox(pt - V(0, 0.010, 0), (0.05, 0.03, 0.06), 0.006, "metal")
     # flaperon hangers: plates from the wing underside down to the hinge line
-    for x in (0.70, 1.55, 2.45, 3.35, 4.25):
+    for x in FLAPERON_HANGERS:
         top_f, _ = wing_point(side, x, 0.78, False)
         top_r, _ = wing_point(side, x, 0.93, False)
         hinge = V(side * x, FLAPERON_PIVOT[1], FLAPERON_PIVOT[2])
@@ -427,7 +442,7 @@ def build_wing(side, col, parent):
         le, _ = wing_point(side, 1.55, 0.012, False)
         mb.rbox(le + V(0, -0.006, 0.012), (0.02, 0.003, 0.025), 0.001, "metal")
     # navigation (red left / green right) and strobe lenses on the tip
-    tip_x = side * 4.672
+    tip_x = side * (WING_TIP_X - 0.003)
     mb.ellipsoid((tip_x, WING_Y + 0.02, -0.12), 0.016, 0.024, 0.055, "lens_red" if side < 0 else "lens_green",
                  nu=6, nv=12)
     mb.ellipsoid((tip_x, WING_Y + 0.02, -0.24), 0.014, 0.020, 0.045, "lens_clear", nu=6, nv=12)
@@ -437,14 +452,15 @@ def build_wing(side, col, parent):
 def build_flaperon(side, col, parent, pivot):
     mb = MB()
     loop = airfoil_loop(0.0, 0.0, 0.14, n=12)
-    xs = [0.62, 0.66, 1.2, 2.0, 2.8, 3.6, 4.2, 4.46, 4.50]
+    end = WING_TIP_X - 0.175
+    xs = [0.62, 0.66, 1.2, 2.0, 2.8, 3.6, end - 0.26, end - 0.04, end]
     rings = []
     for i, x in enumerate(xs):
         th = 0.6 if i in (0, len(xs) - 1) else 1.0          # rounded end caps
         l2 = airfoil_loop(0.0, 0.0, 0.14 * th, n=12)
         c = 0.23 if th == 1.0 else 0.21
         rings.append(section((side * x, 0.50, -0.70 - (0.23 - c) / 2), c, (0, 0, -1), (0, 1, 0), l2))
-    mb.loft(rings, lambda c: "paint_red" if abs(c[0]) > 4.06 else "paint_white")
+    mb.loft(rings, lambda c: "paint_red" if abs(c[0]) > WING_PAINT_X else "paint_white")
     # rib tapes
     for x in (1.0, 1.6, 2.2, 2.8, 3.4, 4.0):
         pts, ups = [], []
@@ -454,17 +470,22 @@ def build_flaperon(side, col, parent, pivot):
                 n0 = V(0, 1 if yc > 0 else -1, 0)
                 pts.append(p0 + n0 * 0.0005)
                 ups.append(n0)
-        mb.sweep(pts, mat="paint_white" if x < 4.06 else "paint_red",
+        mb.sweep(pts, mat="paint_white" if x < WING_PAINT_X else "paint_red",
                  profile=[(0, -0.01), (0.001, -0.008), (0.001, 0.008), (0, 0.01)], ups=ups)
     # hinge horns under the leading edge at each hanger
-    for x in (0.70, 1.55, 2.45, 3.35, 4.25):
+    for x in FLAPERON_HANGERS:
         mb.rbox((side * x + side * 0.016, 0.50, -0.715), (0.008, 0.03, 0.05), 0.003, "metal")
     return make_object("SKEL_Aileron_%s" % ("L" if side < 0 else "R"), mb, col, parent, pivot=pivot, smooth=34)
 
 
+# Both wing struts and the main gear leg meet at one fitting on the lower longeron at the
+# rear of the cabin (the three-view and side photos agree on this station).
+STRUT_FOOT = (0.55, -0.50, -0.40)
+
+
 def build_struts(side, col, parent):
     mb = MB()
-    foot = V(side * 0.53, -0.46, -0.15)
+    foot = V(side * STRUT_FOOT[0], STRUT_FOOT[1], STRUT_FOOT[2])
     tops = [V(side * 2.55, 0.555, 0.06), V(side * 2.55, 0.560, -0.52)]
     loop = airfoil_loop(0, 0, 0.36, n=8)
     prof = [((0.35 - xc) * 0.075, yc * 0.075) for xc, yc in loop]   # streamlined, 75 mm chord
@@ -480,7 +501,7 @@ def build_struts(side, col, parent):
     mb.rbox(foot + V(-side * 0.01, 0, 0), (0.04, 0.06, 0.10), 0.01, "metal")
     # jury struts from each main strut up to the wing
     for top, wz in zip(tops, (-0.02, -0.38)):
-        t = (1.75 - 0.53) / (2.55 - 0.53)
+        t = (1.75 - STRUT_FOOT[0]) / (2.55 - STRUT_FOOT[0])
         p = foot + (top - foot) * t
         w, _ = wing_point(side, 1.75, (WING_LE_Z - wz) / WING_CHORD, False)
         mb.tube(p, w + V(0, 0.004, 0), 0.010, n=8, mat="paint_white")
@@ -561,25 +582,20 @@ def build_gear(col, parent):
     for side in (-1, 1):
         mb = MB()
         axle = V(side * MAIN_X, GROUND_Y + MAIN_R, MAIN_Z)
-        # tapered spring-steel leg from the fuselage to the axle
-        pts = [V(side * 0.30, -0.52, MAIN_Z), V(side * 0.62, -0.68, MAIN_Z), V(side * (MAIN_X - 0.09), axle.y + 0.03, MAIN_Z)]
-        n_pts = 8
-        path = []
-        for i in range(n_pts):
-            t = i / (n_pts - 1)
-            path.append(pts[0] * (1 - t) ** 2 + pts[1] * 2 * t * (1 - t) + pts[2] * t * t)
-        profs = []
-        mb.sweep(path, mat="paint_white", up=(0, 0, 1),
-                 profile=[(-0.035, -0.011), (0.035, -0.011), (0.035, 0.011), (-0.035, 0.011)])
+        # straight composite leg from the strut fitting, splayed out and down to the axle
+        top = V(side * (STRUT_FOOT[0] - 0.04), STRUT_FOOT[1] - 0.05, STRUT_FOOT[2])
+        low = V(side * (MAIN_X - 0.085), axle.y + 0.03, MAIN_Z)
+        mb.tube(top, low, 0.026, 0.021, n=14, mat="paint_white")
+        mb.rbox(top + V(side * 0.01, 0.01, 0), (0.06, 0.05, 0.09), 0.008, "metal")        # leg socket
         mb.rbox(axle + V(-side * 0.09, 0.01, 0), (0.03, 0.07, 0.08), 0.008, "metal")    # axle plate
         wheel(mb, axle, MAIN_R, 0.13, side=side)
         # step on the leg for getting in
-        sp = path[2]
+        sp = top + (low - top) * 0.30
         mb.tube(sp, sp + V(0, 0.0, 0.16), 0.009, n=8, mat="metal")
         mb.rbox(sp + V(0, 0.008, 0.18), (0.07, 0.008, 0.06), 0.004, "black")
         # wheel spat with a slot for the tyre
         pant = MB()
-        pant.loft(wheel_pant(axle + V(0, 0.045, -0.03), 0.088, 0.165, 0.38), "paint_red")
+        pant.loft(wheel_pant(axle + V(0, 0.045, -0.03), 0.115, 0.19, 0.38), "paint_red")
         pobj = make_object("Wheelpant_%s" % ("L" if side < 0 else "R"), pant, col, parent, smooth=60)
         slot = MB()
         slot.rbox(axle + V(0, -0.17, -0.03), (0.155, 0.22, 0.50), 0.04, "inlet_dark")
@@ -588,17 +604,24 @@ def build_gear(col, parent):
         objs.append(pobj)
         objs.append(make_object("Gear_%s" % ("L" if side < 0 else "R"), mb, col, parent, smooth=40))
 
-    # nose gear: leg, rubber-donut suspension, fork, wheel, spat
+    # nose gear: a long leg raked well forward from under the cabin floor to the fork, held
+    # up by a sprung shock strut from the bottom of the firewall; fork, wheel and spat
     mb = MB()
     axle = V(0.0, GROUND_Y + NOSE_R, NOSE_Z)
-    top = V(0.0, -0.40, NOSE_Z + 0.06)
-    mid = V(0.0, -0.66, NOSE_Z + 0.015)
-    mb.tube(top, mid, 0.024, n=14, mat="metal")
-    for i in range(3):
-        y = -0.47 - i * 0.032
-        mb.sweep([V(0.04 * math.cos(a), y, NOSE_Z + 0.05 + 0.04 * math.sin(a))
+    top = V(0.0, -0.535, 0.72)
+    mid = V(0.0, -0.80, NOSE_Z - 0.09)
+    mb.tube(top, mid, 0.024, 0.022, n=14, mat="paint_white")
+    mb.rbox(top + V(0, 0.01, 0), (0.09, 0.04, 0.07), 0.008, "metal")                    # pivot
+    leg = (mid - top).normalized()
+    shock_lo = top + leg * ((0.93 - top.z) / leg.z)
+    shock_hi = V(0.0, -0.475, 0.93)
+    mb.tube(shock_hi, shock_lo, 0.017, n=12, mat="metal_dark")
+    for i in range(5):                                                                  # spring
+        t = 0.2 + 0.15 * i
+        c = shock_hi + (shock_lo - shock_hi) * t
+        mb.sweep([c + V(0.026 * math.cos(a), 0, 0.026 * math.sin(a))
                   for a in [2 * math.pi * j / 16 for j in range(16)]],
-                 radius=0.014, n=8, mat="rubber", closed=True)
+                 radius=0.006, n=6, mat="metal", closed=True)
     mb.rbox(mid + V(0, -0.02, 0), (0.17, 0.035, 0.07), 0.01, "metal")                   # fork crown
     for s in (-1, 1):
         mb.sweep([mid + V(s * 0.072, -0.02, 0), axle + V(s * 0.072, 0, 0)], mat="metal", up=(0, 0, 1),
@@ -607,7 +630,7 @@ def build_gear(col, parent):
     mb.tube(axle + V(-0.085, 0, 0), axle + V(0.085, 0, 0), 0.012, n=10, mat="metal")
     objs.append(make_object("Gear_Nose", mb, col, parent, smooth=40))
     pant = MB()
-    pant.loft(wheel_pant(axle + V(0, 0.04, -0.02), 0.078, 0.145, 0.32), "paint_red")
+    pant.loft(wheel_pant(axle + V(0, 0.04, -0.02), 0.10, 0.17, 0.32), "paint_red")
     pobj = make_object("Wheelpant_Nose", pant, col, parent, smooth=60)
     slot = MB()
     slot.rbox(axle + V(0, -0.15, -0.02), (0.13, 0.20, 0.42), 0.035, "inlet_dark")
@@ -621,27 +644,37 @@ def build_gear(col, parent):
 # ============================================================================
 # tail
 # ============================================================================
-STAB_Y = 0.10
-ELEV_HINGE_Z = -3.20
-RUDDER_HINGE_Z = -3.25
+# The tailplane sits on top of the tail cone at the foot of the fin, braced by a V strut
+# each side; swept leading edge, straight hinge and trailing edge, 7 ft 10 in span (the
+# folded width). The fin has a straight swept leading edge running into a concave dorsal
+# fillet, a flat top and a vertical trailing edge; the rudder runs down past the tail cone.
+STAB_Y = 0.43
+ELEV_HINGE_Z = -3.32
+RUDDER_HINGE_Z = -3.48
+RUDDER_TE_Z = -3.76
+FIN_TOP_Y = 1.13
 TAIL_T = 0.09
 FIN_T = 0.08
+
+
+def _round(u):
+    u = min(max(u, 0.0), 1.0)
+    return 1 - math.sqrt(max(1 - u * u, 0.0))
 
 
 def stab_planform(x):
     """(LE z, TE z) of the horizontal tail at span x, with rounded tips."""
     ax = abs(x)
-    le = -2.68 - 0.18 * min(ax, 1.25) / 1.25
-    te = -3.52 + 0.06 * min(ax, 1.25) / 1.25
-    if ax > 1.12:
-        u = min((ax - 1.12) / 0.19, 1.0)
-        r = 1 - math.sqrt(max(1 - u * u, 0.0))
-        le -= 0.25 * r
-        te += 0.22 * r
+    le = -2.82 - 0.24 * min(ax, 1.08) / 1.08
+    te = -3.66 + 0.04 * min(ax, 1.08) / 1.08
+    if ax > 1.08:
+        r = _round((ax - 1.08) / 0.115)
+        le -= 0.12 * r
+        te += 0.10 * r
     return le, te
 
 
-STAB_X = [0.0, 0.13, 0.4, 0.8, 1.12, 1.19, 1.24, 1.275, 1.295, 1.305]
+STAB_X = [0.0, 0.16, 0.4, 0.8, 1.08, 1.13, 1.16, 1.18, 1.19, 1.195]
 
 
 def tail_section_pts(x, le, te, hinge, part, n, t=TAIL_T, y=STAB_Y, vertical=False):
@@ -674,6 +707,18 @@ def build_stabilizer(col, parent):
                 ups.append(V(0, ny, -nx))
             mb.sweep(pts, mat="paint_white", ups=ups,
                      profile=[(0, -0.009), (0.001, -0.007), (0.001, 0.007), (0, 0.009)])
+    # V struts from the lower tail cone up to the underside of each half
+    loop = airfoil_loop(0, 0, 0.36, n=8)
+    prof = [((0.35 - xc) * 0.035, yc * 0.035) for xc, yc in loop]
+    for side in (-1, 1):
+        foot = V(side * 0.115, 0.21, -2.93)
+        for z in (-2.95, -3.24):
+            le, te = stab_planform(0.55)
+            yc, _ = airfoil_surface(0, 0, TAIL_T, (le - z) / (le - te), False)
+            top = V(side * 0.55, STAB_Y + yc * (le - te) + 0.004, z)
+            mb.sweep([foot, top], mat="paint_white", profile=prof, up=(0, 0, 1))
+            mb.tube(top + V(0, -0.012, 0), top + V(0, 0.003, 0), 0.008, n=8, mat="metal")
+        mb.rbox(foot, (0.02, 0.035, 0.05), 0.006, "metal")
     return make_object("Stabilizer", mb, col, parent, smooth=34)
 
 
@@ -703,19 +748,31 @@ def build_elevator(col, parent, pivot):
     return make_object("SKEL_Elevator", mb, col, parent, pivot=pivot, smooth=34)
 
 
-FIN_Y = [0.10, 0.40, 0.70, 0.98, 1.08, 1.13, 1.16, 1.175]
+FIN_Y = [0.27, 0.32, 0.37, 0.40, 0.43, 0.47, 0.51, 0.55, 0.70, 0.85, 1.00, 1.06, 1.10, 1.12, 1.13]
+RUDDER_Y = [-0.07, -0.05, -0.02, 0.02, 0.06, 0.15, 0.25] + FIN_Y
 
 
 def fin_planform(y):
-    le = -2.55 + (-2.84 + 2.55) * min(y - 0.10, 0.60) / 0.60 if y <= 0.70 else \
-        -2.84 + (-3.05 + 2.84) * (y - 0.70) / 0.425
-    te = -3.63 + 0.06 * min((y - 0.10) / 0.60, 1.0) + 0.05 * max(0.0, (y - 0.70) / 0.425)
-    if y > 1.0:
-        u = min((y - 1.0) / 0.18, 1.0)
-        r = 1 - math.sqrt(max(1 - u * u, 0.0))
-        le -= 0.20 * r
-        te += 0.14 * r
+    """(LE z, rudder TE z) of the fin and rudder at height y."""
+    if y >= 0.55:
+        le = -2.80 - 0.42 * (y - 0.55) / (FIN_TOP_Y - 0.55)
+    elif y >= 0.40:
+        le = -2.80 + 0.40 * ((0.55 - y) / 0.15) ** 2         # concave dorsal fillet
+    else:
+        le = -2.40 + 3.0 * (0.40 - y)                         # buried in the tail cone
+    te = RUDDER_TE_Z
+    if y > 1.05:                                              # rounded top corners
+        r = _round((y - 1.05) / (FIN_TOP_Y - 1.05))
+        le -= 0.12 * r
+        te += 0.04 * r
+    if y < 0.06:                                              # rounded rudder heel
+        te += 0.16 * _round((0.06 - y) / 0.13)
     return le, te
+
+
+def fin_thickness(le, te):
+    """Keep the long fillet sections thin: no more than ~68 mm thick."""
+    return FIN_T * min(1.0, 0.85 / (le - te))
 
 
 def build_fin(col, parent):
@@ -723,28 +780,22 @@ def build_fin(col, parent):
     rings = []
     for y in FIN_Y:
         le, te = fin_planform(y)
-        rings.append(tail_section_pts(y, le, te, RUDDER_HINGE_Z, "fixed", 10, t=FIN_T, vertical=True))
-    mb.loft(rings, lambda c: "paint_red" if c[1] > 0.70 else "paint_white")
-    # dorsal fillet blending the fin into the top of the fuselage
-    rings = []
-    for y, le in ((0.16, -1.80), (0.30, -2.05), (0.42, -2.40), (0.52, -2.66)):
-        te = -2.95
-        chord = le - te
-        t = min(0.045 / chord, 0.30)
-        rings.append(section((0, y, le), chord, (0, 0, -1), (1, 0, 0), airfoil_loop(0, 0, t, n=8)))
-    mb.loft(rings, "paint_white")
-    for y in (0.30, 0.55, 0.85):
+        rings.append(tail_section_pts(y, le, te, RUDDER_HINGE_Z, "fixed", 10, t=fin_thickness(le, te),
+                                      vertical=True))
+    mb.loft(rings, lambda c: "paint_red" if c[1] > 0.80 else "paint_white")
+    for y in (0.62, 0.80, 0.98):
         le, te = fin_planform(y)
         chord = le - te
+        t = fin_thickness(le, te)
         f = (le - RUDDER_HINGE_Z) / chord
         for upper in (True, False):
             pts, ups = [], []
             for i in range(1, 9):
                 xc = f * i / 9.0
-                yc, (nx, ny) = airfoil_surface(0, 0, FIN_T, xc, upper)
+                yc, (nx, ny) = airfoil_surface(0, 0, t, xc, upper)
                 pts.append(V(yc * chord + ny * 0.0005, y, le - xc * chord))
                 ups.append(V(ny, 0, -nx))
-            mb.sweep(pts, mat="paint_red" if y > 0.7 else "paint_white", ups=ups,
+            mb.sweep(pts, mat="paint_red" if y > 0.80 else "paint_white", ups=ups,
                      profile=[(0, -0.009), (0.001, -0.007), (0.001, 0.007), (0, 0.009)])
     return make_object("Fin", mb, col, parent, smooth=34)
 
@@ -752,36 +803,42 @@ def build_fin(col, parent):
 def build_rudder(col, parent, pivot):
     mb = MB()
     rings = []
-    for y in [-0.02, 0.10] + FIN_Y[1:]:
-        le, te = fin_planform(max(y, 0.10))
-        if y < 0.10:
-            te = -3.65
-        rings.append(tail_section_pts(y, le, te, RUDDER_HINGE_Z, "move", 8, t=FIN_T, vertical=True))
-    mb.loft(rings, lambda c: "paint_red" if c[1] > 0.70 else "paint_white")
+    root_le, root_te = fin_planform(FIN_Y[0])
+    for y in RUDDER_Y:
+        le, te = fin_planform(y)
+        if y < FIN_Y[0]:
+            le = root_le                     # below the fin: same section as at its root
+            t = fin_thickness(root_le, root_te)
+        else:
+            t = fin_thickness(le, te)        # matches the fin at the hinge
+        rings.append(tail_section_pts(y, le, te, RUDDER_HINGE_Z, "move", 8, t=t, vertical=True))
+    mb.loft(rings, lambda c: "paint_red" if c[1] > 0.80 else "paint_white")
     # tail navigation light on the trailing edge, and the control horns at the bottom
-    mb.ellipsoid((0, 0.37, -3.625), 0.012, 0.03, 0.018, "lens_clear", nu=6, nv=10)
+    mb.ellipsoid((0, 0.30, RUDDER_TE_Z + 0.005), 0.012, 0.03, 0.018, "lens_clear", nu=6, nv=10)
     for side in (-1, 1):
-        mb.rbox((side * 0.035, 0.05, -3.27), (0.05, 0.035, 0.008), 0.003, "metal")
+        mb.rbox((side * 0.035, 0.0, RUDDER_HINGE_Z - 0.02), (0.05, 0.035, 0.008), 0.003, "metal")
     return make_object("SKEL_Rudder", mb, col, parent, pivot=pivot, smooth=34)
 
 
 # ============================================================================
 # propeller
 # ============================================================================
-PROP_Z = 1.86
-PROP_R = 0.864        # 68 inch diameter
+PROP_Z = 1.64
+PROP_R = 0.79         # 5.18 ft (62 in) diameter, from the AeroTrek three-view
+SPINNER_Z0, SPINNER_LEN, SPINNER_R = 1.615, 0.255, 0.125
 
 
 def build_spinner(col, parent):
     mb = MB()
-    z0, length, r0 = 1.805, 0.215, 0.118
+    # a long, pointed spinner (an ogive rather than the old half-dome)
+    z0, length, r0 = SPINNER_Z0, SPINNER_LEN, SPINNER_R
     rings = []
     for t in (0.0, 0.08, 0.18, 0.3, 0.42, 0.54, 0.65, 0.75, 0.83, 0.9, 0.95, 0.985):
-        r = r0 * math.sqrt(1 - t * t)
+        r = r0 * (1 - t ** 1.8) ** 0.72
         rings.append([V(r * math.cos(2 * math.pi * j / 48), r * math.sin(2 * math.pi * j / 48), z0 + length * t)
                       for j in range(48)])
     mb.loft(rings, "paint_red")
-    mb.disc((0, 0, 1.800), (0, 0, 1), 0.121, 0.01, n=48, mat="metal")            # backplate
+    mb.disc((0, 0, z0 - 0.005), (0, 0, 1), r0 + 0.003, 0.01, n=48, mat="metal")    # backplate
     return make_object("Spinner", mb, col, parent, smooth=40)
 
 
@@ -792,6 +849,8 @@ def build_blades(col, parent, pivot):
                 (0.53, 0.106, 24, None), (0.63, 0.097, 21, None), (0.72, 0.086, 19, None),
                 (0.79, 0.074, 17.5, None), (0.83, 0.062, 16.8, None), (0.855, 0.046, 16.2, None),
                 (0.864, 0.024, 16, None)]
+    k = PROP_R / 0.864        # stations were laid out for a 68 in blade; scale to PROP_R
+    stations = [(r * k if r > 0.10 else r, c * (0.6 + 0.4 * k), b, kind) for r, c, b, kind in stations]
     loop = airfoil_loop(0.02, 0.4, 0.11, n=10)
     circ = [(0.4 + 0.4 * math.cos(math.atan2(yc, xc - 0.4)), 0.4 * math.sin(math.atan2(yc, xc - 0.4)))
             for xc, yc in loop]
@@ -812,7 +871,7 @@ def build_blades(col, parent, pivot):
                 shape = loop
             origin = V(0.0, 0.0, PROP_Z) + radial * r - cd * (chord * 0.4)
             rings.append(section(origin, chord, cd, td, shape))
-        mb.loft(rings, lambda c: "prop_tip" if math.hypot(c[0], c[1]) > 0.80 else "prop")
+        mb.loft(rings, lambda c: "prop_tip" if math.hypot(c[0], c[1]) > PROP_R - 0.075 else "prop")
     return make_object("PROPELLER", mb, col, parent, pivot=pivot, smooth=45)
 
 

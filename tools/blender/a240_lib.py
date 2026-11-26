@@ -100,8 +100,8 @@ MATERIALS = {
     "metal":        _m((0.80, 0.80, 0.82), metal=1.0, rough=0.35),
     "metal_dark":   _m((0.33, 0.30, 0.28), metal=1.0, rough=0.55),
     "chrome":       _m((0.92, 0.92, 0.92), metal=1.0, rough=0.12),
-    "prop":         _m((0.05, 0.05, 0.055), rough=0.40),
-    "prop_tip":     _m((0.95, 0.72, 0.05), rough=0.40),
+    "prop":         _m((0.90, 0.90, 0.88), rough=0.35),     # white composite blades
+    "prop_tip":     _m((0.74, 0.06, 0.07), rough=0.35),     # red tips
     "lens_red":     _m((0.85, 0.03, 0.03), rough=0.08),
     "lens_green":   _m((0.05, 0.75, 0.15), rough=0.08),
     "lens_clear":   _m((0.86, 0.88, 0.90), metal=0.6, rough=0.06),
